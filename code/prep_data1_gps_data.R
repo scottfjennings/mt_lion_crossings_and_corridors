@@ -1,0 +1,146 @@
+
+
+
+
+library(tidyverse)
+library(here)
+
+
+source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/code/mountain_lion_utilities.R")
+
+exclude_pumas <- c("P10"  # only collared 2 weeks
+                   , "P15" # only collared 1 week
+                   , "P17" # very little data so likely will break logistic regression models
+                   , "P20" # only collared 1 week
+                   , "P27" # daughter of P16, both died at the same time while P27 still dependent
+                   , "P32" # moved to Hopland, Q thinks data after move are good, but that's outside our study area
+                   )
+
+# number of days to trim from start and end of each collar deployment
+start.buffer = 1
+end.buffer = -2
+
+
+# read data prepared in  C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/code/clean_raw_download.R
+deployments <- read_csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/lion_deployments.csv")
+
+collars <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/cleaned_collars") 
+
+# first need to ID when P2, P6, and P19 were still dependent on P1
+# use puma_proximity() from mt_lion_data_work/code/mountain_lion_utilities.R
+
+
+
+p1_family_proximity <- bind_rows(puma_proximity("P1", "P2"),
+                                 puma_proximity("P1", "P6"),
+                                 puma_proximity("P1", "P19")) %>% 
+  arrange(round.datetime) %>%
+  filter(!is.na(dist)) %>% 
+  mutate(date.local = as.Date(round.datetime, "America/Los_Angeles"),
+         week = format(date.local, "%Y%U")) %>% 
+  group_by(cat2.id, week) %>%
+  mutate(mean.weekly.dist = mean(dist),
+         time.diff = cat1.time - cat2.time) %>% 
+  ungroup()
+
+write.csv(p1_family_proximity, here("data/p1_family_proximity.csv"), row.names = FALSE)
+
+p1_family_proximity %>%  
+  ggplot() +
+  geom_line(aes(x = date.local, y = dist, color = cat2.id)) +
+  geom_line(aes(x = date.local, y = mean.weekly.dist, color = cat2.id), linewidth = 2) +
+  # stat_smooth(aes(x = date.local, y = dist, group = cat2.id), color = "gray10", linewidth = 2, se = FALSE, span = 0.2, method = "loess") +
+  theme_bw() +
+  scale_x_date(date_breaks = "1 month") +
+  labs(x = "Date",
+       y = "Distance (m)",
+       title = "Distance between P1 and 3 of her kittens",
+       color = "Kitten ID") +
+  facet_wrap(~cat2.id, nrow = 3, scales = "free")
+
+ggsave(here("figures/p1_family_proximity.png"), width = 10)
+
+# there seems to be a clear dependent/independent signal when the weekly average distance goes above 1 km (checking with Quinton about this as of 3/13/24)
+
+independent_dates <- p1_family_proximity %>% 
+  filter(mean.weekly.dist > 1000) %>% 
+  group_by(cat2.id) %>% 
+  filter(cat2.time == min(cat2.time)) %>% 
+  select(animal.id = cat2.id, min.datetime = cat2.time)
+
+# update the analysis_dates table ----
+analysis_dates <- collars %>% 
+  full_join(independent_dates) %>% 
+  mutate(new.start = if_else(animal.id %in% independent_dates$animal.id, min.datetime, as.POSIXct(paste(collar.start + start.buffer, "00:00:01"), format = "%Y-%m-%d %H:%M:%S")),
+         new.end = as.POSIXct(paste(collar.end + end.buffer, "23:59:59"), format = "%Y-%m-%d %H:%M:%S")) %>% 
+  filter(!animal.id %in% exclude_pumas)
+
+
+pre_analysis_table <- right_join(deployments, analysis_dates) %>% 
+  select(animal.id, collar.id, datetime.local, date.local, collar.start, collar.end, latitude, longitude, altitude, dop, fix.type, sex, collar, age, new.start, new.end) %>% 
+  mutate(keep.row = between(datetime.local, new.start, new.end))
+
+
+analysis_table <- pre_analysis_table %>% 
+  filter(keep.row == TRUE, dop < 5, str_detect(fix.type, "3D")) %>% 
+  select(animal.id, collar.id, datetime.local, date.local, latitude, longitude, altitude, dop, sex, collar, age)
+
+
+saveRDS(analysis_table, here("data/analysis_table"))
+
+# converting single row GPS data to paired-GPS steps ----
+
+# load lion GPS data and convert to steps ----
+analysis_table <- readRDS(here("data/analysis_table"))
+#
+# NO RUN using amt to separate steps ----
+puma_track <- analysis_table %>% 
+  mutate(animal.collar = paste(animal.id, collar.id, sep = "_")) %>% 
+  make_track(longitude, latitude, datetime.local, crs = 4326, id = animal.collar)
+
+puma_track_utm <- transform_coords(puma_track, 26910)
+
+puma_steps <- nest(puma_track_utm, data = -"id") %>%  
+  mutate(steps = map(data, function(x) 
+    x |> #track_resample(rate = minutes(120), tolerance = minutes(120)) |> 
+      steps_by_burst()))
+
+puma_steps_df <- puma_steps |> 
+  select(id, steps) |> 
+  unnest(cols = steps) %>% 
+  mutate(id = paste(id, seq(1, nrow(.)), sep = "_"))
+
+
+# simpler way of creating steps, this doesn't resample so we keep all steps ----
+puma_gps_utm <- analysis_table %>% 
+  select(animal.id, collar.id, longitude, latitude, datetime.local) %>% 
+  st_as_sf(x = .,
+           coords = c("longitude", "latitude"),
+           crs = 4326) %>% 
+  st_transform(crs = 26910) %>% 
+  mutate(easting = st_coordinates(.)[,1],
+         northing = st_coordinates(.)[,2]) 
+
+puma_steps <- puma_gps_utm %>% 
+  data.frame() %>% 
+  arrange(animal.id, datetime.local) %>% 
+  group_by(animal.id, collar.id) %>% 
+  mutate(datetime.local.end = lead(datetime.local),
+         easting.end = lead(easting),
+         northing.end = lead(northing),
+         step.dur = datetime.local.end - datetime.local,
+         step.dist = st_distance(st_as_sf(., coords = c("easting", "northing"), crs=26910),
+                                 st_as_sf(., coords = c("easting.end", "northing.end"), crs=26910)),
+         step.id = paste(animal.id, collar.id, row_number(), sep = "_")) %>% 
+  ungroup() %>% 
+  select(-geometry) %>% 
+  filter(!is.na(datetime.local.end)) %>% 
+  filter(between(as.numeric(step.dur), 2700, 43200)) # 45 min and 12 hr
+
+
+puma_steps$step.dist = as.numeric(st_distance(st_as_sf(puma_steps, coords = c("easting", "northing"), crs=26910),
+                                              st_as_sf(puma_steps, coords = c("easting.end", "northing.end"), crs=26910), by_element = TRUE))
+
+saveRDS(puma_steps, here("data/puma_steps"))
+
+
