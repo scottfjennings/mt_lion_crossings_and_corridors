@@ -40,17 +40,17 @@ study_area_counties <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyo
   st_transform(crs = 26910)
 ```
 
-After basic data cleaning, the first major step in this analysis is to identify which mountain lion "steps" crossed roads. A step is simply the movement between 2 sequential GPS locations. Below I consider all steps that were between 45 minutes and 12 hours.
+After basic data cleaning, the first major step in this analysis is to identify which mountain lion “steps” crossed roads. A step is simply the movement between 2 sequential GPS locations. Below I have excluded mountain lions P10, P15, P17, P20, P27, and P32 due to mostly the short times those lions were collared and have filtered to just consider steps that were between 45 minutes and 12 hours. Unless otherwise indicated, all figures below show all mountain lions combined.
 
 
 
 Road data are available for Napa County here: https://gisdata.countyofnapa.org/datasets/672af75a8edb4f3288efd41f092e3aae_0/explore  
 and for Sonoma County here: https://gis-sonomacounty.hub.arcgis.com/datasets/8c533884059741bc85e943193837d414_0/explore  
 
-These GIS layers classify roads based on national standards (https://safety.fhwa.dot.gov/speedmgt/data_facts/docs/rd_func_class_1_42.pdf), and each named road is separated into multiple segments averaging `r mean(napa_sonoma_rds_utm$shape_leng) %>% round(., 1)` m (range `r min(napa_sonoma_rds_utm$shape_leng) %>% round(., 1)` to `r max(napa_sonoma_rds_utm$shape_leng) %>% round(., 1)` m). Most road segments are Local roads or other slow speed roads that are likely not the most risky for mountain lions to cross. 
+These GIS layers classify roads based on national standards (https://safety.fhwa.dot.gov/speedmgt/data_facts/docs/rd_func_class_1_42.pdf), and each named road is separated into multiple segments averaging `r mean(napa_sonoma_rds_utm$shape_leng) %>% round(., 1)` m (range `r min(napa_sonoma_rds_utm$shape_leng) %>% round(., 1)` to `r max(napa_sonoma_rds_utm$shape_leng) %>% round(., 1) %>% formatC(., format="d", big.mark=",")` m). Most road segments are Local roads or other slow speed roads that are likely less risky for mountain lions to cross. 
 
 ```{r}
-
+my.colors = RColorBrewer::brewer.pal(9, "Set1")[c(5, 9)]
 napa_sonoma_rds_utm %>% 
   group_by(class) %>% 
   summarise(num.segments = n()) %>% 
@@ -59,7 +59,7 @@ napa_sonoma_rds_utm %>%
   mutate(puma.risk = ifelse(class %in% keep_road_classes, "higher", "lower")) %>% 
   ggplot() +
   geom_col(aes(y = fct_reorder(class, num.segments), x = num.segments, fill = puma.risk)) +
-  scale_fill_brewer(palette = "Set2") +
+  scale_fill_manual(values = my.colors) +
   labs(x = "Number of road segments",
        y = NULL,
        fill = "Assumed risk to\nmountain lions",
@@ -69,8 +69,9 @@ napa_sonoma_rds_utm %>%
         legend.background = element_rect(colour = 'black', fill = 'white', linetype='solid'))
 
 ```
+\newpage  
 
-Eliminating all these assumed lower risk roads from the operations described below greatly improves computing time for detecting which steps involved road crossings. In the map below the higher risk roads are colored by road class, and the lower risk roads are gray.  
+Eliminating all these assumed lower risk roads from the analysis greatly improves computing time for detecting which steps involved road crossings. This is what the network of assumed higher risk roads looks like; the higher risk roads are colored by road class, and the lower risk roads are shown in gray for reference.  
 
 ```{r}
 
@@ -104,78 +105,9 @@ full_out_roads <- road_crossing_steps %>%
   st_as_sf() %>% 
   mutate(road.was.crossed = ifelse(!is.na(step.id), "crossed", "not.crossed"))
 ```
-
-```{r}
-
-
-
-#' crossings_test_plot
-#' 
-#' test plot showing a subset of mountain lion steps classified as road crossing or non-crossing steps
-#'
-#' @param zout_crossings full_out_crossings filtered to the data you want to show in the test plot
-#' @param bbox_coords optional. if left blank defaults to the extent of zout_crossings. otherwise supply a 4 character string of bounding box coordinates in this sequence: xmin, xmax, ymax, ymin
-#'
-#' @return a ggplot object
-#'
-#' @examples
-crossings_test_plot <- function(zout_crossings, bbox_coords = NA) {
-
-if(any(is.na(bbox_coords)))  {
-bb.xmin = min(zout_crossings$easting)
-bb.xmax = max(zout_crossings$easting)
-bb.ymax = max(zout_crossings$northing)
-bb.ymin = min(zout_crossings$northing)
-} else {
-bb.xmin = bbox_coords[1]
-bb.xmax = bbox_coords[2]
-bb.ymax = bbox_coords[3]
-bb.ymin = bbox_coords[4]  
-}
-    
-out_road_slicer <- st_bbox(c(xmin = bb.xmin, xmax = bb.xmax,
-                             ymax = bb.ymax, ymin = bb.ymin), crs = st_crs(26910)) %>% 
-  st_as_sfc()
-
-out_roads <- full_out_roads %>% 
-  st_intersection(., out_road_slicer)%>% 
-  mutate(road.was.crossed = ifelse(road.was.crossed == "crossed", "Road was\ncrossed", "Road not\ncrossed"))
-
-out_road_labels <- out_roads %>% 
-  group_by(label) %>% 
-  filter(shape_leng == max(shape_leng)) %>% 
-  ungroup() %>% 
-  distinct(label, geometry)
-
-out_roads_dropped <- napa_sonoma_rds_utm %>% 
-  filter(!class %in% keep_road_classes) %>% 
-  st_as_sf() %>% 
-  st_intersection(., out_road_slicer)
-
-my_colors <- RColorBrewer::brewer.pal(8, "Dark2")[7:8]
-
-zout_crossings <- zout_crossings %>% 
-  mutate(puma.crossed.road = ifelse(puma.crossed.road == "crossed", "Step crossed\nroad", "Step didn't\ncross road"))
-
-ggplot(out_roads)  +
-  geom_sf(aes(color = road.was.crossed), linewidth = 1.5) + 
-  scale_color_brewer(palette = 'Dark2') +
-  geom_sf(data = out_roads_dropped, color = "gray")+
-  geom_segment(data = filter(zout_crossings, (between(easting, bb.xmin, bb.xmax) & between(easting.end, bb.xmin, bb.xmax)) & 
-                               (between(northing, bb.ymin, bb.ymax) & between(northing.end, bb.ymin, bb.ymax))), aes(x = easting, y = northing, xend = easting.end, yend = northing.end, color = puma.crossed.road)) +
-  geom_sf_label(data = out_road_labels, aes(label = label), size = 2) +
-  coord_sf(datum = st_crs(26910)) +
-  theme_bw() +
-  labs(x = "",
-       y = "",
-       color = NULL) +
-    theme(legend.position="top")
-}
-
-```
   
-    
-The mountain lion step data and road layer can then be combined to identify every step that involved a road crossing. The result is too detailed and covers too large an area to show for all mountain lions all at once, but we can zoom in on specific chunks of the data to view how the road-crossing classification worked. Here, we are zooming in on P1 while she was carrying collar #23163 in 2017-18. Here, the thicker colored lines are higher risk roads, the thinner colored lines are the mountain lion steps, and the thinner gray lines are the lower risk. Orange indicates where steps crossed road segments, and green indicates no crossing. (Note that some roads showing up a crossed without a corresponding mountain lion step are a relics of the filtering process)  
+  
+The mountain lion step data and road layer can then be combined to identify every step that involved a road crossing. The result is too detailed and covers too large an area to show for all mountain lions all at once, but we can zoom in on specific chunks of the data to view how the road-crossing classification worked. Here, we are zooming in on a portion of the data for P1. Here, the thicker colored lines are higher risk roads, the thinner colored lines are the mountain lion steps, and again the thinner gray lines are the lower risk. Color indicates which steps crossed road segments and which road segments were crossed by steps. Note that filtering to zoom in makes some roads show up as crossed without a corresponding mountain lion step and cuts the connections between many steps.  
 
 
 ```{r eval=FALSE}
@@ -197,6 +129,7 @@ full_out_crossings %>%
 
 ```{r}
 step_summary <- full_out_crossings  %>% 
+  mutate(animal.id = str_replace(animal.id, "\\*", "")) %>% 
   group_by(animal.id, puma.crossed.road) %>% 
   summarise(num.steps = n()) %>% 
   ungroup() %>% 
@@ -204,12 +137,12 @@ step_summary <- full_out_crossings  %>%
   select(-geometry) %>% 
   pivot_wider(id_cols = animal.id, names_from = puma.crossed.road, values_from = num.steps) %>% 
   mutate(per.steps = 100 * (crossed/(crossed + not.crossed)),
-         per.steps = round(per.steps, 2)) %>% 
+         per.steps = round(per.steps, 1)) %>% 
   arrange(-per.steps)
 ```
 
 
-Across all mountain lions, of `r nrow(puma_steps)` total steps, `r nrow(road_crossing_steps)` (`r round(100 * (nrow(road_crossing_steps)/nrow(puma_steps)), 2)`%) crossed roads. Among individual mountain lions between `r min(step_summary$per.steps)`-`r max(step_summary$per.steps)`% of the steps crossed roads.
+Across all mountain lions, of `r nrow(puma_steps) %>% formatC(., format="d", big.mark=",")` total steps, `r nrow(road_crossing_steps) %>% formatC(., format="d", big.mark=",")` (`r round(100 * (nrow(road_crossing_steps)/nrow(puma_steps)), 1)`%) crossed roads. Among individual mountain lions between `r min(step_summary$per.steps)`-`r max(step_summary$per.steps)`% of the steps crossed roads.
 
 ```{r}
 
@@ -224,7 +157,59 @@ step_summary %>%
 
 ```
   
-The dataset contains fewer steps during daylight. This is NOT a reflection of mountain lion behavior, and is only due to collar performance and data filtering. This needs to be investigated further. However, this plot does show a strong tendency for road crossing steps to be during night.   
+  
+  
+Bennett Valley and Warm Springs roads had by far the highest number of distinct crossing events, each with over twice as many as the next most frequently crossed roads.  
+
+```{r}
+crossing_freq <- road_crossing_steps %>% 
+  data.frame() %>% 
+  group_by(label, county) %>% 
+  summarise(num.crossings = n())
+
+crossing_freq %>%
+  filter(num.crossings >= 10) %>%  
+  arrange(-num.crossings) %>% 
+  flextable() %>% 
+  set_header_labels(label = "Road",
+                    county = "County",
+                    num.crossings = "# distinct\ncrossings") %>% 
+  autofit() %>% 
+  align(j = 2:3, align = "center", part = "all") %>% 
+  set_caption("Roads with at least 10 crossings.")
+
+```
+  
+
+Not surprisingly, the most frequently crossed roads are where most of the GPS fixes are, in the hills and mountains either side of Hwy 12. Here only the assumed higher risk roads are shown, but now the assumed high risk roads with 0 crossings are shown in gray. This map shows crossings aggregated up to the entire length of each named road, so it likely obscures potential crossing hot spots for some of the longer roads (e.g., Hwys 1 and 101).  
+
+```{r}
+
+crossing_freq_roads <- napa_sonoma_rds_utm %>% 
+  filter(class %in% keep_road_classes) %>% 
+  full_join(crossing_freq) %>% 
+  mutate(num.crossings = ifelse(is.na(num.crossings), 0, num.crossings))
+
+
+ggplot() +
+  #geom_sf(data = filter(napa_sonoma_rds_utm, !class %in% keep_road_classes), color = "gray") +
+  geom_sf(data = filter(crossing_freq_roads, class %in% keep_road_classes, num.crossings == 0), color = "gray") +
+  geom_sf(data = filter(crossing_freq_roads, class %in% keep_road_classes, num.crossings > 0), aes(color = num.crossings), linewidth = 1, show.legend = "line") +
+  geom_sf(data = filter(study_area_counties, NAME %in% c("Napa", "Sonoma")), fill = NA) +
+  coord_sf(datum = st_crs(26910)) +
+  scale_colour_gradient(low = "#FDD49E", high = "#990000") +
+  theme_bw() +
+  labs(color = "# crossings") +
+    theme(legend.position="top",
+          axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
+
+```
+  
+\newpage  
+
+The dataset contains fewer steps during daylight. This is NOT a reflection of mountain lion behavior, but rather is only due to collar performance and data filtering. This needs to be investigated further. However, this plot does show a strong tendency for road crossing steps to be during night.   
 
 ```{r fig.width = 7.5}
 full_out_crossings %>% 
@@ -242,7 +227,8 @@ full_out_crossings %>%
         legend.background = element_rect(colour = 'black', fill = 'white', linetype='solid'))
 ```
 
-Indeed, when we look at the proportion of steps each hour (which should exclude the collar performance and data filtering effects), we see most of the road crossings happened at night, as expected based on likely traffic patterns and mountain lion ecology. Although non-crossing steps were relatively evenly distributed through the day, it is important to note that this does not represent constant activity (step lengths) through the day. This only indicates that there is very little pattern in frequency of non-crossing steps through the day.  
+  
+Indeed, when we look at the proportion of steps each hour (which should exclude the collar performance and data filtering effects), we see most of the road crossings happened at night, as expected based on likely traffic patterns and mountain lion ecology. Although non-crossing steps were relatively evenly distributed through the day, it is important to note that this does not represent constant activity (i.e., step lengths or distance travelled) through the day. This only indicates that there is very little pattern in frequency of non-crossing steps through the day.  
 
 ```{r fig.width = 7.5}
 full_out_crossings %>% 
@@ -261,6 +247,8 @@ full_out_crossings %>%
         legend.background = element_rect(colour = 'black', fill = 'white', linetype='solid'))
 ```
 
+  
+\newpage  
 
 Road crossing steps generally covered more distance than non-road crossing steps. A strong majority of non-crossing steps were less than about 250 m, whereas most road crossing steps were greater than 500 m (note these step lengths have been scaled to the 2-hour fix interval for better comparison among steps of different duration). This could mean that mountain lions are travelling faster/farther when they are crossing roads. Additionally, because of the relatively high density of roads in Napa and Sonoma Counties, it could also mean that these mountain lions may not be able to travel larger distances without encountering roads.  
 
@@ -307,8 +295,10 @@ full_out_crossings %>%
         legend.background = element_rect(colour = 'black', fill = 'white', linetype='solid'))
 
 ```
-  
-And among longer steps the average lengths of crossing and non-crossing steps are much more similar and with stronger overlapping standard deviations than when comparing all steps. This suggests that mountain lions don't necessarily encounter and cross roads every time they make longer steps, but when they do cross roads, they do so withlonger steps.
+   
+\newpage  
+ 
+And looking at these data a slightly different way, among longer steps the average lengths of crossing and non-crossing steps are much more similar and with stronger overlapping standard deviations than when comparing all steps. This suggests that mountain lions don't necessarily encounter and cross roads every time they make longer steps, but when they do cross roads, they do so with longer steps.
    
 ```{r fig.width = 7.5}
 
@@ -344,7 +334,7 @@ all_step_summary <- full_out_crossings %>%
 
 ```
 
-Viewing step length as a function of hour of day reveals that steps were shorter during the early daylight hours and longest in the first few hours of darkness for both crossing and non-crossing steps. 
+Viewing step length as a function of hour of day reveals somewhat opposite patterns for crossing and non-crossing steps. As we might expect based on mountain lion ecology, non-crossing steps were generally shortest during daylight hours and longest in crepuscular and nighttime hours. In contrast, crossing steps were shortest during approximately the last half of nighttime hours, then lengthened through daylight to peak in mid afternoon (but there were fewer crossing steps during afternoon, as shown above), and then slowly decrease during the first few hours of darkness.
 
 ```{r fig.width = 7.5}
 full_out_crossings %>% 
