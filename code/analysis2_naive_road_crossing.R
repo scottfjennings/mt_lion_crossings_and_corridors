@@ -12,7 +12,10 @@ source(here("code/utilities.R"))
 
 # read data ----
 # steps
-puma_steps <- readRDS(here("data/puma_steps"))
+puma_steps <- readRDS(here("data/puma_steps"))%>% 
+  #  filter(between(as.numeric(step.dur), 2700, 43200)) %>%  # 45 min and 12 hr
+  filter(between(as.numeric(step.dur), 6600, 7800)) # 110 min and 130 min 
+# limiting data to just steps 120 +- 20 min to just consider movement behavior near the time of the road crossing
 
 # road layer in UTM
 napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm")) %>% 
@@ -21,7 +24,7 @@ napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm")) %>%
 # find which lion steps crossed roads ----
 
 
-get_rd_cross <- function(zstep) {
+get_naive_rd_cross <- function(zstep) {
 step <- filter(puma_steps, step.id == zstep)
 
 sp_step <- bind_rows(step %>% 
@@ -52,10 +55,11 @@ xx <- filter(puma_steps, animal.id == "P21", collar.id == 37474)
 
 xx <- puma_steps[1:4,]
 system.time(
-road_crossing_steps <- map_df(puma_steps$step.id, get_rd_cross), gcFirst = TRUE
+road_crossing_steps <- map_df(puma_steps$step.id, get_naive_rd_cross), gcFirst = TRUE
 )
 
-saveRDS(road_crossing_steps, here("data/road_crossing_steps_napa_sonoma"))
+# road_crossing_steps$geometry is the geometry of the road segment that is along the direct line of the step, not the step
+saveRDS(road_crossing_steps, here("data/road_crossing_steps_napa_sonoma_2hr"))
 
-road_crossing_steps <- readRDS(here("data/road_crossing_steps"))
+road_crossing_steps <- readRDS(here("data/road_crossing_steps_napa_sonoma_2hr"))
 
