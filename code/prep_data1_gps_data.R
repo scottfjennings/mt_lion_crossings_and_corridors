@@ -4,6 +4,7 @@
 
 library(tidyverse)
 library(here)
+library(sf)
 
 
 source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/code/mountain_lion_utilities.R")
@@ -26,7 +27,7 @@ deployments <- read_csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch
 
 collars <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/cleaned_collars") 
 
-# first need to ID when P2, P6, and P19 were still dependent on P1
+# first need to ID when P2, P6, and P19 were still dependent on P1 ----
 # use puma_proximity() from mt_lion_data_work/code/mountain_lion_utilities.R
 
 
@@ -80,9 +81,18 @@ pre_analysis_table <- right_join(deployments, analysis_dates) %>%
   select(animal.id, collar.id, datetime.local, date.local, collar.start, collar.end, latitude, longitude, altitude, dop, fix.type, sex, collar, age, new.start, new.end) %>% 
   mutate(keep.row = between(datetime.local, new.start, new.end))
 
+saveRDS(pre_analysis_table, here("data/pre_analysis_table"))
 
-analysis_table <- pre_analysis_table %>% 
-  filter(keep.row == TRUE, dop < 5, str_detect(fix.type, "3D")) %>% 
+# initially and arbitrarily used dop < 5 while getting the code to run, then switched to dop < 10 following 
+# McClure, M. L., B. G. Dickson, and K. L. Nicholson. 2017. Modeling connectivity to identify current and future anthropogenic barriers to movement of large carnivores: A case study in the American Southwest. Ecology and Evolution 7:3762–3772.
+# and
+# D’eon, R. G., and D. Delparte. 2005. Effects of radio-collar position and orientation on GPS radio-collar performance, and the implications of PDOP in data screening. Journal of Applied Ecology 42:383–388.
+# D’eon and Delparte found that eliminating 2D fixes improved accuracy similar to only using dop < 10, but that it eliminated 7.7% of the data whereas using dop < 10 eliminated only 1.3% of their data. In our dataset, filtering dop > 10 | fix.type %in% c("2D", "No Fix") causes a 2.1% data loss, which we feel is acceptable so we filtered based on both dop < 10 and fix type = 3D 
+
+
+#analysis_table <- pre_analysis_table %>% 
+analysis_table <- readRDS(here("data/pre_analysis_table")) %>% 
+  filter(keep.row == TRUE, dop < 10, str_detect(fix.type, "3D")) %>% 
   select(animal.id, collar.id, datetime.local, date.local, latitude, longitude, altitude, dop, sex, collar, age)
 
 
@@ -128,18 +138,14 @@ puma_steps <- puma_gps_utm %>%
   mutate(datetime.local.end = lead(datetime.local),
          easting.end = lead(easting),
          northing.end = lead(northing),
-         step.dur = datetime.local.end - datetime.local,
-         step.dist = st_distance(st_as_sf(., coords = c("easting", "northing"), crs=26910),
-                                 st_as_sf(., coords = c("easting.end", "northing.end"), crs=26910)),
-         step.id = paste(animal.id, collar.id, row_number(), sep = "_")) %>% 
+         step.dur = datetime.local.end - datetime.local) %>% 
   ungroup() %>% 
-  select(-geometry) %>% 
-  filter(!is.na(datetime.local.end)) %>% 
-  filter(between(as.numeric(step.dur), 2700, 43200)) # 45 min and 12 hr
+  filter(!is.na(easting.end)) %>% 
+  mutate(step.dist = st_distance(st_as_sf(., coords = c("easting", "northing"), crs=26910),
+                                 st_as_sf(., coords = c("easting.end", "northing.end"), crs=26910), by_element = TRUE),
+         step.id = paste(animal.id, collar.id, row_number(), sep = "_")) %>% 
+  select(-geometry) 
 
-
-puma_steps$step.dist = as.numeric(st_distance(st_as_sf(puma_steps, coords = c("easting", "northing"), crs=26910),
-                                              st_as_sf(puma_steps, coords = c("easting.end", "northing.end"), crs=26910), by_element = TRUE))
 
 saveRDS(puma_steps, here("data/puma_steps"))
 

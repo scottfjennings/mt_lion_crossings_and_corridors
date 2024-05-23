@@ -1,7 +1,7 @@
 # load and prep sonoma county road layer ----
 
 napa_rds <- read_sf(dsn= "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/napa_county/Road_Centerlines/road_centerlines_roadcenterlines_calc.shp") %>% 
-  select(objectid, "label" = fullname, speedlimit, lanes, surface, "class" = roadclass, shape_Leng, geometry) %>% 
+  dplyr::select(objectid, "label" = fullname, speedlimit, lanes, surface, "class" = roadclass, shape_Leng, geometry) %>% 
   rename_all(., ~tolower(.)) %>% 
   mutate(county = "Napa")
 
