@@ -83,3 +83,27 @@ crossings_test_plot <- function(zout_crossings, bbox_coords = NA) {
           axis.text = element_blank(),
           axis.ticks = element_blank())
 }
+
+
+
+
+
+#' prob_checker
+#' 
+#' check the probability raster from a bbmm
+#'
+#' @param zbbmm 
+#'
+#' @return a data frame. nan.prob is logical indicating whether any cells have NAN probability. prob.size is the number of raster cells.
+#' @details
+#' 
+#' 
+#'
+#' @examples
+prob_checker <- function(zbbmm) {
+  bbmm <- all_clusters_bbmm[[zbbmm]]
+  prob_check <- data.frame(nan.prob = any(is.nan(bbmm$probability)),
+                           prob.size = length((bbmm$probability)),
+                           crossing.step = zbbmm)
+}
+
