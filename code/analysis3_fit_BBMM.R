@@ -13,72 +13,23 @@ library(sf)
 library(move)
 library(BBMM)
 
+source(here("code/utilities.R"))
+
 options(scipen = 999)
 
 
-road_crossing_steps <- readRDS(here("data/road_crossing_steps_napa_sonoma"))
+road_crossing_steps <- readRDS(here("data/road_crossing_steps_napa_sonoma_2hr"))
 puma_steps <- readRDS(here("data/puma_steps")) %>% 
   mutate(step.dist.2hr = (step.dist/as.numeric(step.dur)) * 7200)
 
-# first need to ID the ~2 steps before and after each crossing
+# using crossing clusters from analysis2.5_crossing_step_clusters.R
 
-# adapted from https://stackoverflow.com/questions/73142970/inspect-surroundings-area-neighbors-context-of-every-row-selected-by-a-filter-co
+crossing_clusters_gps <- readRDS(here("data/crossing_clusters2_gps")) # clusters of 2 before/after steps and 3 before/after points - this is the Zeller et al 2020 method
+#crossing_clusters_gps <- readRDS(here("data/crossing_clusters3_gps")) # clusters of 3 before/after steps and 4 before/after points
 
-extract.with.context <- function(zstep) {
-  
-  match.idx  <- which(puma_steps$step.id == zstep)
-  span       <- seq(from = -2, to = 2)
-  extend.idx <- c(outer(match.idx, span, `+`))
-  extend.idx <- Filter(function(i) i > 0 & i <= nrow(puma_steps), extend.idx)
-  extend.idx <- sort(unique(extend.idx))
-  
-  neighbor_steps = puma_steps[extend.idx, , drop = FALSE] %>% 
-    mutate(crossing.step = zstep)
-return(neighbor_steps)
-  }
-
-
-
-system.time(
-neighbor_steps_all <- map_df(distinct(road_crossing_steps, step.id)$step.id, extract.with.context), gcFirst = TRUE
-)
-
-# want all steps in a cluster to be close to 2 hours, currently using +- 10 min
-
-ok_step_dur <- neighbor_steps_all %>% 
-  dplyr::select(step.id, crossing.step, step.dur) %>% 
-  mutate(ok.step.dur = between(as.numeric(step.dur), 6600, 7800)) %>% 
-  group_by(crossing.step) %>% 
-  mutate(all.step.dur.ok = all(ok.step.dur == TRUE)) %>% 
-  ungroup()
-
-ok_step_dur %>% 
-  filter(all.step.dur.ok == TRUE) %>% 
-  distinct(crossing.step) %>% nrow()
-
-crossing_clusters <- ok_step_dur %>% 
-  filter(all.step.dur.ok == TRUE) %>% left_join(neighbor_steps_all) %>%
-  group_by(crossing.step) %>% 
-  mutate(cluster.step.num = row_number()) %>% 
-  ungroup()
 
 # then fit the dBBMM to each of those 5 step clusters
-# first need to decompose each step back into simple GPS points
 
-crossing_clusters_gps <- crossing_clusters %>%  
-  data.frame() %>% 
-  dplyr::select(crossing.step, step.id, cluster.step.num, easting, easting.end, northing, northing.end, datetime.local, datetime.local.end) %>% 
-  mutate(across(c(easting, easting.end, northing, northing.end, datetime.local, datetime.local.end), ~as.character(.))) %>% 
-  pivot_longer(cols = c(easting, easting.end, northing, northing.end, datetime.local, datetime.local.end)) %>% 
-  mutate(cluster.step.num = ifelse(cluster.step.num == 5 & str_detect(name, "end"), "5b", cluster.step.num),
-         name = ifelse(cluster.step.num == "5b", str_replace(name, ".end", ""), name)) %>% 
-  filter(!str_detect(name, ".end")) %>% 
-  pivot_wider(id_cols = c(crossing.step, step.id, cluster.step.num), values_from = value, names_from = name) %>% 
-  mutate(datetime.local = as.POSIXct(datetime.local),
-         easting = as.numeric(easting),
-         northing = as.numeric(northing)) %>% 
-  dplyr::select(-cluster.step.num)
-  
 
 #' calc_crossing_bbmm
 #' 
@@ -101,32 +52,30 @@ p1 <- crossing_clusters_gps %>%
   arrange(datetime.local) %>% 
   mutate(time.lag = as.numeric(difftime(datetime.local, lag(datetime.local), units = "mins")))
 
-bb <- brownian.bridge(x = p1$easting, y = p1$northing, time.lag = p1$time.lag[-1], location.error = 5, cell.size = 100, max.lag = 130, time.step = 5)
-
-bb_df <- data.frame(x = bb$x, y = bb$y, probability = bb$probability) %>% 
-  mutate(zindex = row_number()) %>% 
-  arrange(-probability) %>% 
-  mutate(prob.sum = cumsum(probability),
-         crossing.step = zcrossing.step) 
+bb <- brownian.bridge(x = p1$easting, y = p1$northing, time.lag = p1$time.lag[-1], location.error = 26.2, cell.size = 30, max.lag = 130, time.step = 5)
 
 }
+
+
 
 crossing_steps <- distinct(crossing_clusters_gps, crossing.step)$crossing.step
 
 system.time(
-  all_clusters_bbmm <- map_df(crossing_steps, calc_crossing_bbmm), gcFirst = TRUE
+zz <- calc_crossing_bbmm(crossing_steps[1]), gcFirst = TRUE
 )
 
-saveRDS(all_clusters_bbmm, here("model_objects/all_clusters_bbmm"))
+system.time(
+  all_clusters_bbmm <- map(crossing_steps, calc_crossing_bbmm), gcFirst = TRUE
+)
+
+names(all_clusters_bbmm) <- crossing_steps
 
 
-bbmm_plotter <- function(zcrossing.step) {
-ggplot() +
-  geom_rect(data = filter(all_clusters_bbmm, prob.sum < 0.9, crossing.step == zcrossing.step), aes(xmin = x - 50, xmax = x + 50, ymin = y - 50, ymax = y + 50, fill = probability)) +
-  geom_path(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
-  geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
-    theme_bw() +
-    labs(title = zcrossing.step)
-}
+# check if any BBMMs resulted in NAN probability for any cell. prob_checker() is in utilities.R
+prob_check <- map_df(crossing_steps, prob_checker)
 
-bbmm_plotter(crossing_steps[1])
+
+# nope, save output
+saveRDS(all_clusters_bbmm, here("model_objects/all_clusters2_bbmm"))
+
+
