@@ -10,8 +10,7 @@ keep_road_classes = c("Collector",
 
 # data visualization/exploration ----
 
-
-
+# naive crossings plot ----
 #' crossings_test_plot
 #' 
 #' test plot showing a subset of mountain lion steps classified as road crossing or non-crossing steps
@@ -85,9 +84,7 @@ crossings_test_plot <- function(zout_crossings, bbox_coords = NA) {
 }
 
 
-
-
-
+# check for NAN in the BBMM probability ----
 #' prob_checker
 #' 
 #' check the probability raster from a bbmm
@@ -105,5 +102,48 @@ prob_checker <- function(zbbmm) {
   prob_check <- data.frame(nan.prob = any(is.nan(bbmm$probability)),
                            prob.size = length((bbmm$probability)),
                            crossing.step = zbbmm)
+}
+
+
+# probabilistic crossings plotter ----
+
+#' prob_road_crossing_plotter
+#'
+#' test plot of probabilistic road crossings
+#' @param zcrossing.step 
+#'
+#' @return ggplot object
+#' @details
+#' requires all_ud_rast, napa_sonoma_rds_utm, all_ud_trim_to_step, all_bbmm_road_slices, and crossing_clusters_gps to be in the environment
+#' currently plots all points in the crossing step cluster, connected by a line, and the crossing step points are colored; the UD; the trimmed UD (green); all roads within the bounding box of the UD (gray); roads within the trimmed UD (blue); and the road sections that the straight line step crossed (red)
+#' 
+#'
+#' @examples
+prob_road_crossing_plotter <- function(zcrossing.step) {
+  
+  # read UD raster  
+  rp <- all_ud_rast[[zcrossing.step]]
+  
+  # clip the road layer to cut down computing time for the main st_intersection below
+  road_slicer <- st_bbox(rp)  %>% st_as_sfc()
+  road_slice <- st_intersection(napa_sonoma_rds_utm, road_slicer)
+  
+  ggplot2::ggplot() +
+    geom_sf(data = all_ud_rast[[zcrossing.step]]) +
+    #tidyterra::geom_spatraster(data = all_ud_rast[[zcrossing.step]]) +
+    #geom_sf(data = all_step_boxes[[zcrossing.step]], fill = NA) +
+    geom_sf(data = all_ud_trim_to_step[[zcrossing.step]], color = "green", fill = NA, linewidth = 2)  +
+    geom_sf(data = road_slice, color = "gray") +
+    geom_sf(data = all_bbmm_road_slices[[zcrossing.step]], color = "blue", linewidth = 3)  +
+    geom_sf(data = bbmm_crossing_steps[[zstep]] %>% st_as_sf(), color = "red", linewidth = 2) +
+    geom_path(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
+    geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
+    geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step, (step.id == zcrossing.step | lag(step.id) == zcrossing.step)), aes(x = easting, y = northing, color = step.id), size = 4) +
+    labs(title = zcrossing.step,
+         x = "",
+         y = "",
+         color = "",
+         fill = "90% UD") +
+    coord_sf(datum = st_crs(26910))
 }
 
