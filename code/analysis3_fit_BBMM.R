@@ -61,13 +61,9 @@ bb <- brownian.bridge(x = p1$easting, y = p1$northing, time.lag = p1$time.lag[-1
 crossing_steps <- distinct(crossing_clusters_gps, crossing.step)$crossing.step
 
 system.time(
-zz <- calc_crossing_bbmm(crossing_steps[1]), gcFirst = TRUE
-)
-
-system.time(
   all_clusters_bbmm <- map(crossing_steps, calc_crossing_bbmm), gcFirst = TRUE
 )
-
+# 320 sec
 names(all_clusters_bbmm) <- crossing_steps
 
 
