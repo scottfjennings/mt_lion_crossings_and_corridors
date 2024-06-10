@@ -177,19 +177,29 @@ get_step_box <- function(zcrossing.step) {
 system.time(
   all_step_boxes <- map(crossing_steps, get_step_box), gcFirst = TRUE
 )
-# ~ 240 sec
+# ~ 240 sec, or 150
 
 names(all_step_boxes) <- crossing_steps
 saveRDS(all_step_boxes, here("model_objects/all_step_boxes"))
 
-# overlay the rectangle on the 90% UD to get just the UD that is between the 2 step end points
+
+#' trim_ud_to_step
+#'
+#' overlay the rectangle on the 90% UD to get just the UD that is between the 2 step end points
+#' 
+#' @param zcrossing.step 
+#'
+#' @return
+#' @details
+#' requires all_step_boxes and all_ud_rast exist in global environment
+#' 
+#'
+#' @examples trim_ud_to_step(crossing_steps[[40]])
 trim_ud_to_step <- function(zcrossing.step) {
 p_poly <- all_step_boxes[[zcrossing.step]]
 ud_rast <- all_ud_rast[[zcrossing.step]]
 ud_slice = st_intersection(st_as_sf(ud_rast), p_poly) 
 }
-
-zz <- trim_ud_to_step(crossing_steps[[40]])
 
 system.time(
   all_ud_trim_to_step <- map(crossing_steps, trim_ud_to_step), gcFirst = TRUE
@@ -242,7 +252,7 @@ get_bbmm_crossing <- function(zcrossing.step) {
 
 system.time(
   all_bbmm_road_slices <- map(crossing_steps, get_bbmm_crossing), gcFirst = TRUE
-) # ~420 sec
+) # ~420 sec, or 179
 names(all_bbmm_road_slices) <- crossing_steps
 
 saveRDS(all_bbmm_road_slices, here("model_objects/all_bbmm_road_slices"))
@@ -263,7 +273,7 @@ ggplot2::ggplot() +
   #geom_sf(data = all_step_boxes[[zcrossing.step]], fill = NA) +
   geom_sf(data = all_ud_trim_to_step[[zcrossing.step]], color = "red", fill = NA, linewidth = 2)  +
   geom_sf(data = road_slice, color = "gray") +
-  geom_sf(data = all_bbmm_road_slices[[zcrossing.step]], color = "green", linewidth = 2)  +
+  geom_sf(data = all_bbmm_road_slices[[zcrossing.step]], color = "blue", linewidth = 3)  +
   geom_path(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
   geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
   geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step, (step.id == zcrossing.step | lag(step.id) == zcrossing.step)), aes(x = easting, y = northing, color = step.id), size = 4) +
@@ -336,10 +346,11 @@ zz <- zcrossing %>%
 system.time(
   all_bbmm_road_slices_continuous <- map(all_bbmm_road_slices, combine_continuous) 
 )
+# 171 sec
 names(all_bbmm_road_slices_continuous) <- names(all_bbmm_road_slices)
 
 
-plot(crossings_continuous[[539]])
+plot(all_bbmm_road_slices_continuous[[539]])
 
 #' num_segment_checker
 #' 
@@ -361,7 +372,7 @@ filter(num_segments, num.segments != 1) %>%
   mutate(keep.segment = 1) %>% 
   write.csv(here("data/manual_road_filter.csv"), row.names = FALSE)
 
-zstep = "P1_32189_6078"
+zcrossing.step = "P1_32189_6078"
 
 #' confirm_bbmm_rd_cross
 #' 
@@ -372,11 +383,12 @@ zstep = "P1_32189_6078"
 #' @return
 #' @details
 #' this is used to filter out remaining roads that were not part of the crossed road
+#' requires crossing_clusters_gps and all_bbmm_road_slices_continuous to be in the environment
 #' 
 #'
 #' @examples
-confirm_bbmm_rd_cross <- function(zstep) {
-  sp_step <- filter(crossing_clusters_gps, crossing.step == zstep, step.id == zstep | lag(step.id) == zstep)
+confirm_bbmm_rd_cross <- function(zcrossing.step) {
+  sp_step <- filter(crossing_clusters_gps, crossing.step == zcrossing.step, step.id == zcrossing.step | lag(step.id) == zcrossing.step)
   
   
   step_line <- sp_step %>%
@@ -385,15 +397,14 @@ confirm_bbmm_rd_cross <- function(zstep) {
     dplyr::summarize(do_union=FALSE) %>%  
     st_cast("LINESTRING") 
   
-  prob_road <- crossings_continuous[[zstep]]
+  prob_road <- all_bbmm_road_slices_continuous[[zcrossing.step]]
   
   rd_cross <- st_intersection(prob_road, step_line) 
   
   out_rd_cross <- rd_cross %>% 
     data.frame() %>% 
-    select(section) %>% 
-    mutate(segment.crossed = 1) %>% 
-    full_join(prob_road)
+    select(section) %>%  
+    left_join(prob_road)
   
   return(out_rd_cross)
 }
@@ -405,16 +416,27 @@ xx <- crossing_steps[1:4]
 system.time(
   bbmm_crossing_steps <- map(crossing_steps, confirm_bbmm_rd_cross), gcFirst = TRUE
 )
+# 217 sec
 
 names(bbmm_crossing_steps) <- crossing_steps
 
 
-zstep = "P39_37843_107361"
+zstep = "P1_37472_12612"
 
-ggplot() +
-  geom_sf(data = bbmm_crossing_steps[[zstep]] %>% st_as_sf(), aes(color = as.character(segment.crossed))) +
-  geom_sf(data = all_clusters_bbmm[[zstep]]) +
-  geom_path(data = filter(crossing_clusters_gps, crossing.step == zstep), aes(x = easting, y = northing))
+road_crossing_plotter(zstep) +
+  geom_sf(data = bbmm_crossing_steps[[zstep]] %>% st_as_sf(), color = "red", linewidth = 2) +
+  coord_sf(datum = st_crs(26910))
+
+# works well
+# zstep = "P16_37473_51563"
+# zstep = "P36_37570_96042"
+
+# still possible problem
+# zstep = "P1_37472_12518"
+# zstep = "P13_29892_22992"
+# zstep = "P13_37473_36228"
+
+
 
 
 
