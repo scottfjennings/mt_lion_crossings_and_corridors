@@ -1,0 +1,139 @@
+---
+title: "Where do mountain lions cross roads?"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      error = FALSE)
+```
+
+
+
+```{r}
+
+library(tidyverse)
+library(here)
+library(sf)
+library(leaflet)
+
+```
+
+```{r}
+bbmm_crossing_steps <- readRDS(here("model_objects/bbmm_crossing_steps"))
+  
+bbmm_crossing_steps_df <-  bind_rows(bbmm_crossing_steps, .id = "crossing.step") %>%
+  mutate(puma = str_extract(crossing.step, "[^_]+")) 
+
+num_cross <- count(bbmm_crossing_steps_df, puma)
+
+map_data <- num_cross %>% 
+  filter(n > 50) %>% 
+  dplyr::select(-n) %>% 
+  left_join(bbmm_crossing_steps_df)%>% 
+  st_as_sf() %>% 
+  st_transform(crs = 4326)
+
+step_times <- readRDS(here("data/puma_steps"))  %>% 
+  filter(between(as.numeric(step.dur), 6600, 7800)) %>%
+  rename(crossing.step = step.id) %>% 
+  full_join(bbmm_crossing_steps_df) %>% 
+  as.data.frame() %>% 
+  select(animal.id, collar.id, datetime.local, label, step.dur, step.dist, crossing.step)%>% 
+  mutate(puma.crossed.road = ifelse(!is.na(label), "Step crossed road", "Step didn't cross road"),
+         step.dist.2hr = (step.dist/as.numeric(step.dur)) * 7200,
+         across(c(step.dist, step.dist.2hr, step.dur), ~as.numeric(.)))
+
+```
+
+This map shows the likely locations where mountain lions crossed major roads in Sonoma and Napa counties between 2016-2023.  
+
+Because the GPS collars collect location only every 2 hours, we don't know exactly where each road crossing occurred. But we can use the shape of the mountain lions' paths to estimate a section of road that was likely crossed. A straighter path just before and after the crossing suggests a narrower section of road was crossed, whereas a path with a lot of twists and turns means a much wider section of road might have been crossed. We can use statistical models to estimate the likely area where the mountain lion's path occurred where it crossed the road, and the section of road within that area is the likely place where the road crossing happened. Then we can overlap all those sections to see where road crossings might be concentrated.  
+
+Each mountain lion with at least 50 road crossings is shown by a different color. The shade of each color indicates where crossings were more (darker) or less (lighter) concentrated. Some things of note:  
+
+* There are several places where road crossings seem to be concentrated for one or more mountain lions. These locations often seem to be where the road goes through the narrowest part of a valley, with hills and/or forest close on both sides of the road. Crossings also seem concentrated where riparian areas intersect with roads; these crossings could be related to mountain lions' overall preference for traveling in riparian areas, and could also indicate they are using culverts and bridges to cross under roads.  
+* These data show that the male P13 regularly crosses roads to overlap the areas where the females P1, P16, and P33 generally live. This includes regular crossings of Hwy 12 near Glen Ellen.  
+* P1 regularly crosses Oakmont Dr. northwest of Kenwood but does not cross Hwy 12, so she apparently regularly ventures from the relatively wild lands of Trione-Annadel State Park into the more developed areas of the Oakmont Golf Course and residential area.  
+
+You can zoom in and pan around the map to explore these data, and you can show/hide each mountain lion and change the base map (click the layers icon in the upper left) to see how crossings relate to topography and vegetation cover on the landscape.  
+
+```{r}
+
+pal <- colorFactor(
+  palette = 'Set1',
+  domain = map_data$puma
+)
+
+leaflet(map_data, width = "100%") %>% 
+  #addTiles() %>% 
+  #addProviderTiles(providers$CartoDB.Positron) %>% 
+  addProviderTiles("CartoDB.Positron", group = "CartoDB.Positron") %>% 
+  addProviderTiles("Esri.WorldTopoMap", group = "Esri.WorldTopoMap") %>%
+  addProviderTiles("USGS.USImagery", group = "USGS.USImagery") %>% 
+# add a layers control
+  addLayersControl(
+    baseGroups = c(
+      "CartoDB.Positron", "Esri.WorldTopoMap", "USGS.USImagery"
+    ),
+    overlayGroups = ~puma,
+    # position it on the topleft
+    position = "topleft" #,
+    #options = layersControlOptions(collapsed = FALSE)
+  ) %>% 
+  addPolylines(opacity = 0.05, color = ~pal(puma), group = ~puma) %>% 
+  setView(lng = -122.54, lat = 38.36, zoom = 11) %>% 
+  addLegend("bottomright", pal = pal, values = ~puma, title = "Puma ID", opacity = 1)
+
+```
+
+# A closer look at road crossing movements.  
+
+We can further explore this crossing data by considering the distance covered and time of day of these road crossing movements. In the parlance of animal movement ecology, the movement of a tagged animal from one GPS fix to the next is called a "step". Below we compare steps that did and did not involve a road crossing.  
+    
+First, we look at the proportion of crossing and non-crossing steps each hour. Here we are filtering data to just steps where the mountain lion moved at least 100m, because for this comparison we aren't interested in data from when the mountain lions were stationary.  
+
+As expected based on mountain lion ecology, most movement steps happened at night. But we also see that the road crossing steps were much more concentrated in the middle of the night, whereas non-crossing steps also frequently happened near dawn and dusk. Additionally, we see that although mountain lions did continue to move around some during the middle of the day, there were very few day time crossing steps.
+  
+```{r}
+
+step_times %>% 
+  filter(step.dist.2hr >= 100) %>% 
+  ggplot() +
+  geom_density(aes(x = hour(datetime.local), color = puma.crossed.road, fill = puma.crossed.road), alpha = 0.5) +
+  scale_fill_brewer(palette = 'Set1') +
+  scale_color_brewer(palette = 'Set1') +
+  theme_bw() +
+  labs(x = "Hour of day",
+       y = "Proportion of steps",
+       color = "",
+       fill = "")  +
+  theme(legend.position=c(.5, .8),
+        legend.title=element_blank(),
+        legend.background = element_rect(colour = 'black', fill = 'white', linetype='solid'))
+
+```
+  
+Next we will look at the distance mountain lions traveled during crossing and non-crossing steps. On average, road crossing steps covered more distance than non-road crossing steps. A strong majority of non-crossing steps were less than about 250 m, whereas most road crossing steps were greater than 500 m (note these step lengths have been scaled to the 2-hour fix interval for better comparison among steps of different duration). Because of the relatively high density of roads in Napa and Sonoma Counties, we might suppose that these mountain lions cannot travel larger distances without encountering roads. However, there are many long distance steps that didn't cross roads, so the data seem to show that mountain lions don't necessarily encounter and cross roads every time they make longer steps, but when they do cross roads, they do so with longer steps.
+
+
+```{r fig.width = 7.5}
+step_times %>% 
+  mutate(hour = hour(datetime.local)) %>%  
+  filter(step.dist.2hr >= 100) %>% 
+  ggplot() +
+  geom_point(aes(x = hour, y = step.dist, color = factor(puma.crossed.road)), alpha = 0.1, show.legend = FALSE) +
+  stat_smooth(aes(x = hour, y = step.dist, color = factor(puma.crossed.road)), show.legend = FALSE) +
+  scale_color_brewer(palette = 'Set1') +
+  theme_bw() +
+  labs(y = "Distance covered by step (m)",
+       x = "Hour of day",
+       color = "")  +
+  facet_wrap(~puma.crossed.road)
+
+
+```
+
