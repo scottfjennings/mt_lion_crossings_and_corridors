@@ -49,7 +49,7 @@ extract.with.context <- function(zstep, num.steps) {
 
 
 system.time(
-  neighbor_steps_all <- map2_df(distinct(naive_crossings, step.id)$step.id, 2, extract.with.context), gcFirst = TRUE
+  neighbor_steps_all <- map2_df(distinct(naive_crossings, step.id)$step.id, 1, extract.with.context), gcFirst = TRUE
 )
 
 
@@ -90,5 +90,5 @@ crossing_clusters_gps <- crossing_clusters %>%
          northing = as.numeric(northing)) %>% 
   dplyr::select(-cluster.step.num)
 
-saveRDS(crossing_clusters_gps, here("data/crossing_clusters2_gps"))
+saveRDS(crossing_clusters_gps, here("data/crossing_clusters_gps_1step"))
 
