@@ -24,7 +24,7 @@ puma_steps <- readRDS(here("data/puma_steps")) %>%
 
 # using crossing clusters from analysis2.5_crossing_step_clusters.R
 
-crossing_clusters_gps <- readRDS(here("data/crossing_clusters2_gps")) # clusters of 2 before/after steps and 3 before/after points - this is the Zeller et al 2020 method
+crossing_clusters_gps <- readRDS(here("data/crossing_clusters_gps_1step")) # clusters of 2 before/after steps and 3 before/after points - this is the Zeller et al 2020 method
 #crossing_clusters_gps <- readRDS(here("data/crossing_clusters3_gps")) # clusters of 3 before/after steps and 4 before/after points
 
 
@@ -72,6 +72,6 @@ prob_check <- map_df(crossing_steps, prob_checker)
 
 
 # nope, save output
-saveRDS(all_clusters_bbmm, here("model_objects/all_clusters2_bbmm"))
+saveRDS(all_clusters_bbmm, here("model_objects/all_clusters_bbmm_1step"))
 
 
