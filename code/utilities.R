@@ -3,8 +3,54 @@
 keep_road_classes = c("Collector", 
                       "Freeway", 
                       "Highway", 
-                      "Arterial",
-                      "Ramp/Interchange")
+                      "Arterial"#,
+                      #"Ramp/Interchange"
+                      )
+
+exclude_labels <- c("Hwy 101 N", "Hwy 12 E")
+
+# combines continuous segments of road into single object ----
+#' combine_continuous
+#' combines continuous segments of road into single object
+#'
+#' @param zlines an sf object representing the LINESTRING segments to be joined. must have at least 2 fields: label with road name and geometry. should be projected in UTM 10N
+#' @param z.buffer distance below which nearby but not touching segments are still combined. some intersecting roads aren't exactly touching (generally <10m??), and some roads just nick the clipped 90% UD max diagonal distance across a 30m raster cell is 42.42641. z.buffer ensures these segments are considered continuous
+#'
+#' @return
+#' 
+#' @details
+#' even with the UD subsetting in get_bbmm_crossing() there are still some road segments included that aren't part of the crossed road. these are generally isolated segments, so combining the segments that touch into single segments will facilitate filtering out these isolated segments that aren't part of the crossed road 
+#' 
+#'
+#' @examples
+combine_continuous <- function(zlines, z.buffer = 42.42641) {
+  
+  zz <- zlines %>% 
+    arrange(label, geometry) %>% 
+    group_by(label) %>% 
+    sf::st_touches(snap_radius = -1) 
+  
+  my_igraph <- igraph::graph_from_adj_list(zz)
+  
+  my_components <- igraph::components(my_igraph)$membership  
+  
+  zz2 <- zlines %>% 
+    group_by(label, section = as.character({{my_components}})) %>% 
+    summarise() %>% 
+    ungroup()
+  
+  zdist = max(as.numeric(sf::st_distance(zz2)))
+  
+  if(zdist > 0 & zdist <= z.buffer) {
+    zz2 <- zz2 %>% 
+      group_by(label) %>% 
+      summarise() %>% 
+      mutate(section = "1")
+  } else {
+    zz2 <- zz2
+  }
+  
+}
 
 
 
@@ -132,10 +178,10 @@ prob_road_crossing_plotter <- function(zcrossing.step) {
     geom_sf(data = all_ud_rast[[zcrossing.step]]) +
     #tidyterra::geom_spatraster(data = all_ud_rast[[zcrossing.step]]) +
     #geom_sf(data = all_step_boxes[[zcrossing.step]], fill = NA) +
-    geom_sf(data = all_ud_trim_to_step[[zcrossing.step]], color = "green", fill = NA, linewidth = 2)  +
+    #geom_sf(data = all_ud_trim_to_step[[zcrossing.step]], color = "green", fill = NA, linewidth = 2)  +
     geom_sf(data = road_slice, color = "gray") +
-    geom_sf(data = all_bbmm_road_slices[[zcrossing.step]], color = "blue", linewidth = 3)  +
-    geom_sf(data = bbmm_crossing_steps[[zstep]] %>% st_as_sf(), color = "red", linewidth = 2) +
+    geom_sf(data = all_bbmm_road_slices[[zcrossing.step]], aes(color = label), linewidth = 3)  +
+    #geom_sf(data = bbmm_crossing_steps[[zcrossing.step]] %>% st_as_sf(), color = "red", linewidth = 2) +
     geom_path(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
     geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
     geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step, (step.id == zcrossing.step | lag(step.id) == zcrossing.step)), aes(x = easting, y = northing, color = step.id), size = 4) +
@@ -147,3 +193,42 @@ prob_road_crossing_plotter <- function(zcrossing.step) {
     coord_sf(datum = st_crs(26910))
 }
 
+
+
+
+# probabilistic crossings plotter ----
+
+#' prob_road_crossing_plotter
+#'
+#' test plot of probabilistic road crossings
+#' @param zcrossing.step 
+#'
+#' @return ggplot object
+#' @details
+#' requires all_ud_rast, napa_sonoma_rds_utm, all_ud_trim_to_step, all_bbmm_road_slices, and crossing_clusters_gps to be in the environment
+#' currently plots all points in the crossing step cluster, connected by a line, and the crossing step points are colored; the UD; the trimmed UD (green); all roads within the bounding box of the UD (gray); roads within the trimmed UD (blue); and the road sections that the straight line step crossed (red)
+#' 
+#'
+#' @examples
+prob_road_crossing_leaflet <- function(zcrossing.step) {
+  
+leaflet(map_data, width = "100%") %>% 
+  #addTiles() %>% 
+  #addProviderTiles(providers$CartoDB.Positron) %>% 
+  addProviderTiles("CartoDB.Positron", group = "CartoDB.Positron") %>% 
+  addProviderTiles("Esri.WorldTopoMap", group = "Esri.WorldTopoMap") %>%
+  addProviderTiles("USGS.USImagery", group = "USGS.USImagery") %>% 
+  # add a layers control
+  addLayersControl(
+    baseGroups = c(
+      "CartoDB.Positron", "Esri.WorldTopoMap", "USGS.USImagery"
+    ),
+    overlayGroups = ~puma,
+    # position it on the topleft
+    position = "topleft" #,
+    #options = layersControlOptions(collapsed = FALSE)
+  ) %>% 
+  addPolylines(opacity = 0.05, color = ~pal(puma), group = ~puma) %>% 
+  setView(lng = -122.54, lat = 38.36, zoom = 11) %>% 
+  addLegend("bottomright", pal = pal, values = ~puma, title = "Puma ID", opacity = 1)
+}
