@@ -18,8 +18,7 @@ puma_steps <- readRDS(here("data/puma_steps")) %>%
 # limiting data to just steps 120 +- 20 min to just consider movement behavior near the time of the road crossing
 
 # road layer in UTM
-napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm")) %>% 
-  filter(class %in% keep_road_classes)
+napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm"))
 
 # functions ----
 
@@ -52,13 +51,14 @@ out_rd_cross <- road_slice[unlist(rd_cross),] %>%
 
 }
 
-xx <- filter(puma_steps, animal.id == "P21", collar.id == 37474)
+# xx <- filter(puma_steps, animal.id == "P21", collar.id == 37474)
 
-xx <- puma_steps[1:4,]
+# xx <- puma_steps[1:4,]
 system.time(
   naive_crossings <- map_df(puma_steps$step.id, get_naive_crossed_rds), gcFirst = TRUE
 )
 # 7018 seconds for 86064 steps on 5/30/24
+
 # road_crossing_steps$geometry is the geometry of the road segment that is along the direct line of the step, not the step
 saveRDS(naive_crossings, here("data/naive_crossings_napa_sonoma_2hr"))
 
