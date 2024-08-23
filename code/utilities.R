@@ -1,14 +1,5 @@
 
 
-keep_road_classes = c("Collector", 
-                      "Freeway", 
-                      "Highway", 
-                      "Arterial"#,
-                      #"Ramp/Interchange"
-                      )
-
-exclude_labels <- c("Hwy 101 N", "Hwy 12 E")
-
 # combines continuous segments of road into single object ----
 #' combine_continuous
 #' combines continuous segments of road into single object
