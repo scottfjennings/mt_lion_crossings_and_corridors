@@ -30,7 +30,7 @@ wt_road_crossed_segs <- all_bbmm_road_slices %>%
               mutate(year = year(datetime.local)) %>% 
               distinct(crossing.step, year)) %>% 
   arrange(label, seg.label)  %>% 
-  mutate(puma = str_extract(crossing.step, "^[^_]+(?=_)"))
+  mutate(animal.id = str_extract(crossing.step, "^[^_]+(?=_)"))
   
 saveRDS(wt_road_crossed_segs, here("data/wt_road_crossed_segs"))
 
