@@ -8,14 +8,9 @@ library(sf)
 
 
 source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/code/mountain_lion_utilities.R")
+source(here("code/helper_data.R"))
 
-exclude_pumas <- c("P10"  # only collared 2 weeks
-                   , "P15" # only collared 1 week
-                   , "P17" # very little data so likely will break logistic regression models
-                   , "P20" # only collared 1 week
-                   , "P27" # daughter of P16, both died at the same time while P27 still dependent
-                   , "P32" # moved to Hopland, Q thinks data after move are good, but that's outside our study area
-                   )
+
 
 # number of days to trim from start and end of each collar deployment
 start.buffer = 1
