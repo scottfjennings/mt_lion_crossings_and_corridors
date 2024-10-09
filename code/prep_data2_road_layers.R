@@ -2,25 +2,28 @@
 
 library(tidyverse)
 library(here)
+library(readxl)
 library(sf)
 
 options(scipen = 999)
 source(here("code/utilities.R"))
+source(here("code/helper_data.R"))
 
 # load and prep sonoma county road layer ----
 
 napa_rds <- read_sf(dsn= "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/napa_county/Road_Centerlines/road_centerlines_roadcenterlines_calc.shp") %>% 
-  dplyr::select(objectid, fullname, munileft, speedlimit, lanes, surface, roadclass, shape_Leng, geometry) %>% 
+  dplyr::select(objectid, fullname, munileft, speedlimit, lanes, surface, roadclass, geometry, owned_by) %>% 
   rename("label" = fullname,
          "class" = roadclass,
-         "leftcity" = munileft) %>% 
-  rename_all(., ~tolower(.)) %>% 
+         "leftcity" = munileft,
+         "pubpriv" = owned_by) %>% 
+#  rename_all(., ~tolower(.)) %>% 
   mutate(county = "Napa",
          leftcity = str_to_title(leftcity))
 
 
 sonoma_rds <- read_sf(dsn= "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/sonoma_county/Streets/TRA_STREET_PUB.shp") %>% 
-  select(OBJECTID, Label, Class, PubPriv, LeftCity, SurfaceTyp, SHAPE_Leng, geometry) %>%
+  dplyr::select(OBJECTID, Label, Class, PubPriv, LeftCity, SurfaceTyp, geometry) %>%
   rename("surface" = SurfaceTyp) %>% 
   rename_all(., ~tolower(.)) %>% 
   mutate(county = "Sonoma")
@@ -30,6 +33,8 @@ napa_sonoma_rds <- bind_rows(napa_rds, sonoma_rds) %>%
          class = ifelse(str_detect(class, "Collector"), "Collector", class),
          class = ifelse(str_detect(class, "Ramp|Interchange"), "Ramp/Interchange", class))
 
+napa_sonoma_rds %>%  
+  st_write(., "data/napa_sonoma_rds.shp", append = FALSE)
 
 
 
@@ -38,21 +43,43 @@ napa_sonoma_rds <- bind_rows(napa_rds, sonoma_rds) %>%
 
 
 # filtering ----
-exclude_roads <- read.csv(here("data/exclude_roads.csv"))
+# exclude_roads.csv is a list of objects to filter out that was created by manually vieing the road layers in ArcGIS
+# 
+# trimmed roundabouts to be only a single path connecting the roads
+# exclude all roads with 
+# " Ct" in the name (courts)
+# " Cir" in the name (circles)
+# " Way" in the name
+# data/exclude_roads.csv has all the Ct, Cir, and Way objects
+# data/exclude_roads2.csv has only the manually selected objects - as of 10/8/24 this is the one to use
+
+exclude_roads <- read.csv(here("data/exclude_roads2.csv"))
+
+#exclude_roads <- exclude_roads %>% 
+#  filter(!str_detect(label, " Way| Ct| Cir"))
+
+#write.csv(exclude_roads, here("data/exclude_roads2.csv"))
 
 napa_sonoma_rds_filtered <- napa_sonoma_rds %>%
   mutate(label = ifelse(objectid %in% c(41622, 17501), "Todd Rd", label),
-         #label = paste(label, leftcity, sep = "_")
+         label = str_to_title(label),
+         pubpriv = ifelse(objectid == "3654" & label == "Pleasant Hill Rd", "Public", pubpriv),
+         pubpriv = ifelse(objectid %in% c("25768", "25762", "25761", "39798") & label == "Montecito Ave", "Public", pubpriv),
+         surface = ifelse(objectid %in% c("1335217", "1339630") & label == "Mount Veeder Rd", "Public", surface),
+         label = ifelse(objectid %in% c("1335392", "1341767", "1341768") & label == "State Highway 37", "Hwy 37", label)
          ) %>% 
   filter(class %in% keep_road_classes, # just the main roads
          !label %in% exclude_labels, # exclude duplicate highway centerlines with direction indicated in label 
-         !objectid %in% exclude_roads$objectid # exclude manually IDed duplicate centerlines
-         ) 
+         !objectid %in% exclude_roads$objectid # exclude manually IDed duplicate centerlines, loops, and other problem segments
+         ) %>% 
+  filter(surface %in% c("Paved", "PAVED"), pubpriv != "Private") # excluding unpaved and private roads; these mostly show up in the Local class
 
 napa_sonoma_rds_filtered %>% 
   ggplot() +
   geom_bar(aes(x = class))
 
+napa_sonoma_rds_filtered %>%  
+  st_write(., "data/napa_sonoma_rds_filtered2.shp", append = FALSE)
 
 
 #Projection transformation
@@ -70,6 +97,49 @@ napa_sonoma_rds_utm %>%
 
 
 saveRDS(napa_sonoma_rds_utm, here("data/napa_sonoma_rds_utm"))
+
+napa_sonoma_rds_utm %>%  
+  dplyr::select(-objectid) %>% 
+  st_write(., "data/napa_sonoma_rds_utm.shp", append = FALSE)
+
+
+# which roads did mortality happen on?
+
+mort <- read.csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/North Bay Puma Roadkill Data.csv")
+
+mort_sf <- mort %>%
+  dplyr::select(Source, FID, Lion.ID, lat, long, date_death) %>% 
+  st_as_sf(x = .,
+           coords = c("long", "lat"),
+           crs = "+proj=longlat +datum=WGS84") %>% 
+  st_transform(., crs = 26910)
+
+st_write(mort_sf, "data/puma_mortalities.shp")
+
+buff_roads <- napa_sonoma_rds_utm %>% 
+  st_buffer(., 30)
+
+mort_road_points <- st_intersection(mort_sf, buff_roads)
+
+mort_roads <- mort_road_points %>% 
+  data.frame() %>% 
+  dplyr::select(label, leftcity, class, FID) %>% 
+  left_join(napa_sonoma_rds_utm) %>% 
+  st_as_sf()
+
+ggplot() + 
+  geom_sf(data = napa_sonoma_rds_utm, color = "gray") + 
+  geom_sf(data = mort_roads, aes(color = as.character(FID))) +
+  geom_sf(data = mort_sf, aes(color = as.character(FID)))
+
+
+
+
+napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm"))
+
+
+
+
 
 # create a shapefile
 

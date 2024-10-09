@@ -10,34 +10,107 @@ source(here("code/utilities.R"))
 
 
 
+# 10/1/24 asked Emi for GIS help on combining the road segments then breaking into equal length segments
+# 10/7/24 got shapefile of equal length segments back from her: https://acr-cgrc.maps.arcgis.com/home/item.html?id=c7b4e7d1ab2240dcbf874b1a38bae804
+# downloaded to data/
+#equal_length_segs <- st_read(here("data/napa_sonoma_rd_dissolve_bylabel_unsplit_spltbypoints.shp"))
 
+# it wasn't quite right but I was able to iterate through her method a few times to get a good merged road layer
+# 
+
+
+equal_length_segs <- st_read(here("data/napa_sonoma_rds_arc_merged.shp"))
+
+
+equal_length_segs <- equal_length_segs %>% 
+  st_transform(crs = 26910) %>% 
+  mutate(seg.length = st_length(.))
+
+equal_length_segs %>% 
+  data.frame() %>% 
+  filter(is.na(label)) %>% 
+  filter(as.numeric(seg.length) >= 1000) %>% 
+#  filter(as.numeric(seg.length) < 1000) %>% 
+  summary()
+  nrow()
+  summarise(tot.length = sum(as.numeric(seg.length)))
+
+napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm"))  %>% 
+  #select(-shape_leng, -shape_Leng) %>% 
+  mutate(label.city = paste(label, leftcity, sep = "_")) 
+
+
+napa_sonoma_rds_utm_buff <- napa_sonoma_rds_utm %>% 
+  st_buffer(10, endCapStyle = "FLAT")
+
+zz <- st_intersection(equal_length_segs, napa_sonoma_rds_utm_buff)
+
+xx <- zz %>% 
+  filter(label == label.1)
+
+
+
+zlab = "Hillcrest Dr"
+
+ggplot() +
+  geom_sf(data = filter(napa_sonoma_rds_utm_buff, label == zlab)) +
+  geom_sf(data = filter(equal_length_segs, label == zlab)) +
+  geom_sf(data = filter(xx, label == zlab), color = "red")
+
+
+
+
+############  below here possibly deprecated  ############
 
 # 1. combine segments into a single object for each named road ----
-napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm"))
+napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm"))  %>% 
+  mutate(label = paste(label, leftcity, sep = "_"))
+
+
+
+
+
+labels_classes <- napa_sonoma_rds_utm %>% 
+  data.frame() %>% 
+#  filter(!is.na(label)) %>% 
+  distinct(label, class) %>% 
+  group_by(label) %>% 
+  count(class) %>% 
+  ungroup()
+
+# distinct(labels_classes, class)
 
 
 # need to get only LINESTRINGS in order to break each road into equal length segments
 
 # first need to join each named road together by label
 # for some roads the segments line up well enough to create a LINESTRING
-# but this still leaves ~773 MULTILINESTRINGs
+
 summarised_roads <- napa_sonoma_rds_utm %>% 
-  group_by(label) %>% 
+  mutate(label = replace_na(label, "noname")) %>% 
+  group_by(label, leftcity) %>% 
   summarise() %>% 
   ungroup()
+# but this still leaves many MULTILINESTRINGs
+summarised_roads %>% 
+  filter(st_geometry_type(.) == "MULTILINESTRING") %>% 
+  nrow()
 
 # peel off the LINESTRING roads that are ready to split
 good_roads <- summarised_roads %>% 
   filter(st_geometry_type(.) == "LINESTRING")
 
 # st_line_merge only works on MULTILINESTRINGs so need to filter those out, do st_line_merge, then add back to the LINESTRINGs.
-# road2 still has 92 MULTILINESTRINGs
 # I still don't know how summarise() and st_line_merge() work differently
 merged_roads <- summarised_roads %>% 
   filter(st_geometry_type(.) == "MULTILINESTRING")  %>% 
   group_by(label) %>% 
   st_line_merge() %>% 
   ungroup()
+
+merged_roads %>% 
+  filter(st_geometry_type(.) == "MULTILINESTRING") %>% 
+  nrow()
 
 
 # peel off the new LINESTRING roads and add to the good roads object
@@ -58,6 +131,16 @@ gap_roads <- merged_roads %>%
   mutate(segment.length = st_length(.),
          segment.length = as.numeric(segment.length))
 
+get_nearest_segment <- function(zroad) {
+  
+  zgap = filter(gap_roads, str_detect(label, zroad))
+  znearest = st_nearest_feature(zgap, zgap)
+  zdist = st_distance(zgap)
+  
+}
+
+
+
 # create the gap bridges  
 road_bridges <- gap_roads %>%  
   group_by(label) %>% 
@@ -69,18 +152,25 @@ road_bridges <- gap_roads %>%
     is.bridge = TRUE
   ) %>% 
   data.frame() %>% 
-  select(label, segment.length = dist, is.bridge, geometry = bridge) %>% 
+  select(label, leftcity, segment.length = dist, is.bridge, geometry = bridge) %>% 
   filter(!is.na(segment.length)) %>% 
   st_as_sf()
 
 
-# here we only bridge gaps that are 10m or less
+# here we only bridge gaps that are 65m or less
+# picked 65m to be no more than 5% of the equal segment length
 bridged_roads <- road_bridges %>% 
-  filter(segment.length < 10) %>% 
+  filter(segment.length <= 65) %>% 
   bind_rows(gap_roads) %>% 
-  group_by(label) %>% 
+  group_by(label, leftcity) %>% 
   summarise() %>% 
-  st_line_merge()
+  st_line_merge() %>% 
+  ungroup()
+
+bridged_roads %>% 
+  filter(st_geometry_type(.) == "MULTILINESTRING") %>% 
+  nrow()
+
 
 # peel off the new LINESTRING roads and add to the good roads object
 good_roads <- bridged_roads %>% 
@@ -92,22 +182,58 @@ good_roads <- bridged_roads %>%
 multi_seg_roads <- bridged_roads %>% 
   filter(st_geometry_type(.) == "MULTILINESTRING") %>%
   st_cast("LINESTRING") %>% 
+  left_join(labels_classes) %>% 
   group_by(label) %>% 
-  mutate(label = paste(label, row_number(), sep = "_")) %>% 
-  ungroup()
+  mutate(label2 = paste(label, row_number(), sep = "_")) %>% 
+  ungroup() %>% 
+  mutate(road.length = st_length(.))
+
+zz <- multi_seg_roads %>% 
+  filter(label == "10th St_Santa Rosa") %>% 
+  #group_by(label) %>% 
+  st_distance()
+
+
+
+ggplot() +
+  geom_sf(data = road_bridges %>%  filter(str_detect(label, "Langtry Rd")), linewidth = 3, alpha = 0.3)  +
+  geom_sf(data = multi_seg_roads %>%  filter(str_detect(label, "Langtry Rd")), aes(color = label)) 
+
+
+multi_seg_roads %>% 
+  filter(class %in% c("Local", "Other")) %>% 
+  st_write(., "data/multi_seg_roads_local_other.shp", append = FALSE)
 
 # any MULTILINESTRING left?
 multi_seg_roads %>% 
   filter(st_geometry_type(.) == "MULTILINESTRING") %>% nrow()
 
+multi_seg_roads_filt <- multi_seg_roads %>% 
+  filter(as.numeric(road.length) > 650)
 
-napa_sonoma_rds_utm_merged <- bind_rows(good_roads, multi_seg_roads) %>% 
-  distinct()
+multi_seg_roads %>% 
+  data.frame() %>% 
+  group_by(class) %>% 
+  summarize(min.ln = min(as.numeric(road.length)),
+            mean.ln = mean(as.numeric(road.length)),
+            max.ln = max(as.numeric(road.length))) %>% view()
+
+napa_sonoma_rds_utm_merged <- multi_seg_roads_filt %>% 
+  dplyr::select(label, geometry) %>% 
+  bind_rows(good_roads) %>% 
+  distinct() %>% 
+  mutate(road.length = st_length(.))
+
 
 napa_sonoma_rds_utm_merged %>% 
   filter(st_geometry_type(.) == "MULTILINESTRING") %>% nrow()
 
 saveRDS(napa_sonoma_rds_utm_merged, here("data/napa_sonoma_rds_utm_merged"))
+
+st_write(napa_sonoma_rds_utm_merged, "data/napa_sonoma_rds_utm_merged.shp", append = FALSE)
+
+napa_sonoma_rds_utm_merged <- napa_sonoma_rds_utm_merged %>% 
+  mutate(road.length = st_length(.))
 
 
 # 2. now split the merged road objects into equal length segments ----
@@ -133,7 +259,7 @@ system.time(
   rd_pts <- map(napa_sonoma_rds_utm_merged$label, make_road_pts)
 )
 names(rd_pts) <- napa_sonoma_rds_utm_merged$label
-
+# 211 sec 9/30/24
 
 
 split_roads <- function(zroad) {
@@ -158,7 +284,7 @@ system.time(
   napa_sonoma_rds_equal_segs <- map(napa_sonoma_rds_utm_merged$label, split_roads)
 )
 names(napa_sonoma_rds_equal_segs) <- napa_sonoma_rds_utm_merged$label
-
+# 317 sec 9/30/24
 
 saveRDS(napa_sonoma_rds_equal_segs, here("data/napa_sonoma_rds_equal_segs"))
 
@@ -175,8 +301,8 @@ rds_equal_segs_buffer <- napa_sonoma_rds_equal_segs %>%
 
 
 ggplot() +
-  geom_sf(data = filter(rds_equal_segs_buffer, label == "Warm Springs Rd")) +
-  geom_sf(data = filter(napa_sonoma_rds_equal_segs, label == "Warm Springs Rd"))
+  geom_sf(data = rds_equal_segs_buffer %>%  filter(str_detect(label, "Langtry Rd")), aes(color = seg.label)) +
+  geom_sf(data = napa_sonoma_rds_equal_segs %>%  filter(str_detect(label, "Langtry Rd")))
 
 
 st_write(rds_equal_segs_buffer, "data/rds_equal_segs_buffer.shp")
