@@ -10,6 +10,7 @@ library(ctmm)
 options(scipen = 999)
 
 #source(here("code/utilities.R"))
+source(here("code/helper_data.R"))
 
 
 study_area_counties <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/study_area_counties")  %>% 
@@ -23,39 +24,140 @@ step_years <- readRDS(here("data/crossing_clusters_gps_1step")) %>%
   distinct(crossing.step, year)
 
 
-
-bbmm_road_slices <- readRDS(here("model_objects/crossed_bbmm_roads_1step"))  %>% 
-  bind_rows(., .id = "crossing.step") %>% 
-  full_join(step_years) #%>% 
-  #group_by(crossing.step, label) %>% 
-  #summarise() %>% 
-  #ungroup() %>% 
-  #mutate(full.crossed.length = st_length(.))
-
-bbmm_road_slices_buff100 <- bbmm_road_slices %>% 
-  full_join(step_years) %>% 
-  st_buffer(., 100, endCapStyle = "FLAT")
-
-ggplot() +
-  geom_sf(data = bbmm_road_slices_buff100[1,]) +
-  geom_sf(data = bbmm_road_slices[1,])
-
-
 # roads
 napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
   bind_rows() %>% 
   rename("road.seg.length" = seg.length)
 
-napa_sonoma_rds_equal_segs_buff100 <- st_buffer(napa_sonoma_rds_equal_segs, 100, endCapStyle = "FLAT")
 
-rds_seg_lengths <- napa_sonoma_rds_equal_segs %>% 
-  data.frame() %>% 
-  select(seg.label, road.seg.length)
+
+puma_years <- readRDS(here("data/crossing_clusters_gps_1step")) %>% 
+  mutate(year = year(datetime.local), 
+         puma = str_extract(crossing.step, "^[^_]+(?=_)"),
+         puma = ifelse(puma == "P5*", "P5", puma)) %>% 
+  ungroup() %>% 
+  distinct(puma, year)
+
+# redoing this to be by puma
+
+# reading in data takes some time so doing it once outside the function
+hr_uds <- readRDS(here("model_objects/puma_hr_uds"))
+
+
+# mask habitat to home range
+get_hr_road_habitat <- function(zpuma, zyear) {
+  
+  puma_hr_uds <- hr_uds[[zpuma]] %>% 
+    as.sf(., DF = "PDF", level.UD = 0.999) %>% 
+    st_transform(crs = 26910)   %>% 
+    filter(str_detect(name, "est"))
+  
+  hab_masker <- st_buffer(puma_hr_uds, 5000)
+  
+  #zhab = rast(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_", zyear, "_2024-03-19.TIF", sep = ""))
+  
+  zhab = rast(here(paste("data/sonoma_napa_usda_rap/sonoma_napa_usda_rap_", zyear, ".TIF", sep = "")))
+  # filter to just the layers needed to speed masking - looks like it is ~1/3 the time as the full habitat layers
+  ind <- match(c("TRE","SHR", "Development"), names(zhab))
+  ind <- ind[!is.na(ind)]
+  zhab_filtered <- zhab[[ names(zhab)[ind] ]]
+  
+  hr_hab <- mask(zhab_filtered, hab_masker)
+  # mask roads to home range
+  hr_roads <- st_intersection(napa_sonoma_rds_equal_segs, puma_hr_uds) %>% 
+    mutate(hr.seg.length = st_length(.))
+  
+  buffer_roads <- function(zbuff) {
+  buff_road <- hr_roads %>% 
+    group_by(label, seg.label, road.seg.length, hr.seg.length) %>% 
+    st_buffer(., zbuff, endCapStyle = "ROUND") %>% 
+    mutate(buff = zbuff)
+  }
+  
+  hr_road_buffers <- map_df(seq(30, 300, by = 30), buffer_roads)
+  
+  hr_road_buffers_df <- hr_road_buffers %>% 
+    data.frame() %>% 
+    select(label, seg.label, buff) %>% 
+    mutate(ID = row_number())
+  
+  # extract habitat along roads
+  
+  
+  tre_ext <- extract(hr_hab, hr_road_buffers, layer = "TRE")  %>% 
+    full_join(hr_road_buffers_df) %>% 
+    rename("TRE" = value, "ID.TRE" = ID) %>% 
+    select(-layer)
+  
+  shr_ext <- extract(hr_hab, hr_road_buffers, layer = "SHR") %>% 
+    #full_join(hr_road_buffers_df) %>% 
+    rename("SHR" = value, "ID.SHR" = ID) %>% 
+    select(-layer)
+  
+  dev_ext <- extract(hr_hab, hr_road_buffers, layer = "Development") %>% 
+    #full_join(hr_road_buffers_df) %>% 
+    rename("Development" = value, "ID.Development" = ID) %>% 
+    select(-layer)
+  
+  tre_shr_dev <- bind_cols(tre_ext, shr_ext, dev_ext) %>% 
+    mutate(across(c(TRE, SHR), ~./100),
+           tre.shr = TRE + SHR)
+  
+  rds_buff_mean_tre_shr_dev <- tre_shr_dev %>% 
+    group_by(label, seg.label, buff) %>% 
+    summarise(mean.dev = mean(Development),
+              mean.tre = mean(TRE),
+              mean.shr = mean(SHR),
+              mean.tre.shr = mean(tre.shr),
+              num.cell = n()) %>% 
+    ungroup() %>% 
+    full_join(hr_roads) %>% 
+    st_as_sf() %>% 
+    mutate(year = zyear,
+           animal.id == zpuma)
+  
+  return(rds_buff_mean_tre_shr_dev)
+  }
+
+
+system.time(
+  all_hr_road_habitat  <- map2_df(puma_years$puma, puma_years$year, get_hr_road_habitat)
+)
+
+saveRDS(all_hr_road_habitat, here("data/all_hr_road_habitat"))
+all_hr_road_habitat <- readRDS(here("data/all_hr_road_habitat"))
+
+
+ggplot() +
+  #geom_sf(data = puma_hr_uds, fill = NA) +
+ # geom_sf(data = hab_masker, fill = NA) +
+#  geom_sf(data = filter(napa_sonoma_rds_equal_segs, label == "Hwy 1"), aes(color = seg.label)) +
+  geom_sf(data = filter(hr_road_buffers, seg.label == "Hwy 1"), fill = NA)  +
+  geom_sf(data = filter(hr_roads, label == "Hwy 1"), aes(color = seg.label))
+
+
+# there are a few bad road sections for P31 along Hwy 1 where some of the buffer area is in the ocean and we get NA habitat values
+filter(all_hr_road_habitat, is.na(mean.dev) & !animal.id %in% hr_exclude_pumas) %>% distinct(seg.label) %>% paste(., collapse = ", ")
+# I create a helper df for these in helper_data.R
+
+# next to analysis8_find_best_hab_scale.R
+
+########################################################################################################
+############## NO RUN BELOW HERE
+# this is the original, slower method for getting habitat values along roads
 
 # habitat layers ----
-# first, mask habitat layers to just sonoma and napa counties for faster extraction at road segment buffers ----
 
-mask_habitat <- function(zyear) {
+#' mask_habitat_to_counties
+#' 
+#' mask habitat layers to just sonoma and napa counties for faster extraction at road segment buffers
+#'
+#' @param zyear which year of habitat layers do you want to mask
+#'
+#' @return saves new raster to this project directory
+#'
+#' @examples
+mask_habitat_to_counties <- function(zyear) {
   zhab = rast(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_", zyear, "_2024-03-19.TIF", sep = ""))
   
   zhab_counties <- mask(zhab, study_area_counties)
@@ -63,13 +165,50 @@ mask_habitat <- function(zyear) {
   writeRaster(zhab_counties, here(paste("data/sonoma_napa_usda_rap/hr_uds_usda_rap_", zyear, ".tif", sep = "")))
 }
 
-mask_habitat(2016)
-
-map(seq(2017, 2023), mask_habitat)
+map(seq(2016, 2023), mask_habitat_to_counties)
 
 ggplot() +
   tidyterra::geom_spatraster(data = zhab, aes(fill = Development))
 
+
+
+# combine home ranges
+
+hr_uds <- readRDS(here("model_objects/puma_hr_uds"))
+
+ud_to_sf <- function(zpuma) {
+  hr_uds[[zpuma]] %>% 
+    as.sf(., DF = "PDF", level.UD = 0.999) %>% 
+    st_transform(crs = 26910) %>% 
+    mutate(animal.id = zpuma)
+}
+
+pumaz = names(hr_uds)
+pumaz = pumaz[!pumaz %in% hr_exclude_pumas]
+
+all_hr_uds <- map_df(pumaz, ud_to_sf)
+
+all_hr_uds_merge_est <- all_hr_uds  %>% 
+  filter(str_detect(name, "est")) %>% 
+  summarise()
+
+# see how it looks
+ggplot() + 
+  geom_sf(data = study_area_counties, fill = NA) + 
+#  geom_sf(data = all_hr_uds  %>% filter(str_detect(name, "est")), fill = NA, aes(color = animal.id)) + 
+  geom_sf(data = all_hr_uds_merge_est, fill = NA) +
+  geom_sf(data = zhab_hrs, aes(color = TRE))
+
+
+
+mask_habitat_to_home_ranges <- function(zyear) {
+  
+  zhab = rast(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_", zyear, "_2024-03-19.TIF", sep = ""))
+  
+  zhab_hrs <- mask(zhab, all_hr_uds)
+  
+  writeRaster(zhab_counties, here(paste("data/sonoma_napa_usda_rap/hr_uds_usda_rap_", zyear, ".tif", sep = "")))
+}
 
 
 
@@ -79,11 +218,11 @@ ggplot() +
 #' extract tree and shrub cover values for a given year in polygons defined by a given buffer around road segments.
 #'
 #' @param zyear the desired year
-#' @param zbuff the desired buffer around
+#' @param zbuff the desired buffer around the road
 #'
 #' @return
 #' @details
-#' need to define zroad as the desired road layer before calling this function. 
+#' need to define zroad as the desired road layer before calling this function. generally zroad = napa_sonoma_rds_equal_segs. in st_buffer, endCapStyle = "FLAT" and "SQUARE" makes weird shapes for some road segments. using endCapStyle = "ROUND" instead even though that includes some habitat from adjacent road segments
 #' 
 #'
 #' @examples
@@ -92,8 +231,7 @@ get_rd_habitat <- function(zyear, zbuff) {
 zhab <- rast(here(paste("data/sonoma_napa_usda_rap/sonoma_napa_usda_rap_", zyear, ".tif", sep = "")))
   
 zroad_buff <- zroad %>% 
-  #filter(year == zyear) %>% 
-  st_buffer(., zbuff, endCapStyle = "FLAT")
+  st_buffer(., zbuff, endCapStyle = "ROUND")
 
   tre_ext <- extract(zhab, zroad_buff, layer = "TRE") %>% 
     mutate(zindex = row_number()) %>% 
@@ -144,17 +282,25 @@ all_rd_seg_habitats <- all_rd_seg_habitats %>%
   bind_cols(year = xyear)
 
 saveRDS(all_rd_seg_habitats, here("data/all_rd_seg_habitats"))
+#all_rd_seg_habitats <- readRDS(here("data/all_rd_seg_habitats"))
 
 
-# filter road segment habitat rasters to each puma's home range ----
 
 
-puma_years <- step_years %>% 
-  mutate(puma = str_extract(crossing.step, "^[^_]+(?=_)"),
-         puma = ifelse(puma == "P5*", "P5", puma)) %>% 
-  ungroup() %>% 
-  distinct(puma, year)
 
+
+
+
+#' get_ud_rd_seg_habitat
+#' 
+#' filter road segment habitat rasters to each puma's home range
+#' 
+#' @param zpuma 
+#' @param zyear 
+#'
+#' @return
+#'
+#' @examples
 get_ud_rd_seg_habitat <- function(zpuma, zyear) {
 hr_uds <- readRDS(here("model_objects/puma_hr_uds"))[[zpuma]] %>% 
   as.sf(., DF = "PDF", level.UD = 0.999) %>% 
@@ -176,266 +322,19 @@ ud_rd_seg_habitats <- map2_df(puma_years$puma, puma_years$year, get_ud_rd_seg_ha
 
 saveRDS(ud_rd_seg_habitats, here("data/ud_rd_seg_habitats"))
 
-ggplot() +
-#  geom_sf(data = study_area_counties, fill = NA) +
-  geom_sf(data = hr_uds, fill = NA) +
-  geom_sf(data = ud_rd_seg_habitat, aes(color = mean.tre.shr))
 
+# vizualize results
 
-# selecting the best spatial scale for each predictor ----
-
-
-all_rd_seg_habitats <- readRDS(here("data/all_rd_seg_habitats")) %>% 
-  data.frame() %>% 
-  select(mean.dev = mead.dev, mean.tre.shr, label, seg.label, year, buff, road.seg.length, -geometry) 
-
-#year_seg <- bbmm_slice_habitats %>% 
-#  distinct(label, seg.label, year, road.seg.length)
-
-wt_road_crossed_segs <- readRDS(here("data/wt_road_crossed_segs"))
-
-sum_wt_road_crossed_segs <- wt_road_crossed_segs %>% 
-  data.frame() %>% 
-  select(-geometry) %>% 
-  #filter(!is.na(year)) %>% 
-  #full_join(year_seg) %>% 
-  #mutate(raw.crossing = replace_na(raw.crossing, 0),
-  #       weighted.crossing = replace_na(weighted.crossing, 0)) %>% 
-  mutate(puma = ifelse(puma == "P5*", "P5", puma)) %>% 
-  group_by(year, puma, seg.label) %>% 
-  summarise(tot.raw.cross = sum(raw.crossing),
-            tot.wt.cross = sum(weighted.crossing)) %>% 
-  ungroup() 
-
-pumas <- distinct(sum_wt_road_crossed_segs, puma)
-
-all_rd_seg_habitats_sum_wt_cross <- all_rd_seg_habitats %>% 
-  group_by(year, seg.label, buff) %>% 
-  expand(puma = pumas$puma) %>% 
-  ungroup() %>% 
-  full_join(all_rd_seg_habitats) %>% 
-  full_join(sum_wt_road_crossed_segs) %>% 
-  mutate(tot.raw.cross = replace_na(tot.raw.cross, 0),
-         tot.wt.cross = replace_na(tot.wt.cross, 0)) %>% 
-  arrange(puma, seg.label, year, buff)
-
-
-
-
-ggplot(sum_wt_road_crossed_segs) +
-  geom_point(aes(x = tot.raw.cross, y = tot.wt.cross, color = as.character(year))) +
-  stat_smooth(aes(x = tot.raw.cross, y = tot.wt.cross, color = as.character(year)), method = "lm")
-
-sum_wt_cross_habitats <- full_join(sum_wt_road_crossed_segs, all_rd_seg_habitats_pumas) %>% 
-  filter(!is.na(year), !is.na(buff)) %>% 
-  arrange(seg.label, year, buff)
-
-sum_wt_cross_habitats_longer <- sum_wt_cross_habitats %>% 
-  expand(year, puma, seg.label, buff) %>% 
-  full_join(sum_wt_cross_habitats)
-
-  
-  
-fit_scale_mods <- function(zpred) {
-
-  mod30 <- lm(tot.wt.cross ~ pred.value + year, data = filter(sum_wt_cross_habitats_longer, pred == zpred, buff == 30))
-    
-  
-  
-}
-
-
-
-
-
-
-
-
-# map through the fixed length road segments ----
-
-system.time(
-  rd_habitat2015 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2015_2024-03-19.TIF"), napa_sonoma_rds_equal_segs_buff100) %>% 
-    mutate(year = 2015)
-)
-saveRDS(rd_habitat2015, here("data/rd_habitat/rd_habitat2015"))
-
-system.time(
-rd_habitat2016 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2016_2024-03-19.TIF"), napa_sonoma_rds_equal_segs_buff100) %>% 
-  mutate(year = 2016)
-)
-saveRDS(rd_habitat2016, here("data/rd_habitat/rd_habitat2016"))
-
-
-system.time(
-  rd_habitat2017 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2017_2024-03-19.TIF"), napa_sonoma_rds_equal_segs_buff100) %>% 
-    mutate(year = 2017)
-)
-saveRDS(rd_habitat2017, here("data/rd_habitat/rd_habitat2017"))
-
-
-system.time(
-  rd_habitat2018 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2018_2024-03-19.TIF"), napa_sonoma_rds_equal_segs_buff100) %>% 
-    mutate(year = 2018)
-)
-saveRDS(rd_habitat2018, here("data/rd_habitat/rd_habitat2018"))
-
-
-system.time(
-  rd_habitat2019 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2019_2024-03-19.TIF"), napa_sonoma_rds_equal_segs_buff100) %>% 
-    mutate(year = 2019)
-)
-saveRDS(rd_habitat2019, here("data/rd_habitat/rd_habitat2019"))
-
-
-system.time(
-  rd_habitat2020 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2020_2024-03-19.TIF"), napa_sonoma_rds_equal_segs_buff100) %>% 
-    mutate(year = 2020)
-)
-saveRDS(rd_habitat2020, here("data/rd_habitat/rd_habitat2020"))
-
-
-system.time(
-  rd_habitat2021 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2021_2024-03-19.TIF"), napa_sonoma_rds_equal_segs_buff100) %>% 
-    mutate(year = 2021)
-)
-saveRDS(rd_habitat2021, here("data/rd_habitat/rd_habitat2021"))
-
-
-system.time(
-  rd_habitat2022 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2022_2024-03-19.TIF"), napa_sonoma_rds_equal_segs_buff100) %>% 
-    mutate(year = 2022)
-)
-saveRDS(rd_habitat2022, here("data/rd_habitat/rd_habitat2022"))
-
-
-system.time(
-  rd_habitat2023 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2023_2024-03-19.TIF"), napa_sonoma_rds_equal_segs_buff100) %>% 
-    mutate(year = 2023)
-)
-saveRDS(rd_habitat2023, here("data/rd_habitat/rd_habitat2023"))
-
-
-# map through the bbmm road slices ----
-
-system.time(
-  bbmm_slice_habitat2016 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2016_2024-03-19.TIF"), filter(bbmm_road_slices_buff100, year == 2016)) %>% 
-    mutate(year = 2016)
-)
-saveRDS(bbmm_slice_habitat2016, here("data/rd_habitat/bbmm_slice_habitat2016"))
-
-
-system.time(
-  bbmm_slice_habitat2017 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2017_2024-03-19.TIF"), filter(bbmm_road_slices_buff100, year == 2017)) %>% 
-    mutate(year = 2017)
-)
-saveRDS(bbmm_slice_habitat2017, here("data/rd_habitat/bbmm_slice_habitat2017"))
-
-
-system.time(
-  bbmm_slice_habitat2018 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2018_2024-03-19.TIF"), filter(bbmm_road_slices_buff100, year == 2018)) %>% 
-    mutate(year = 2018)
-)
-saveRDS(bbmm_slice_habitat2018, here("data/rd_habitat/bbmm_slice_habitat2018"))
-
-
-system.time(
-  bbmm_slice_habitat2019 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2019_2024-03-19.TIF"), filter(bbmm_road_slices_buff100, year == 2019)) %>% 
-    mutate(year = 2019)
-)
-saveRDS(bbmm_slice_habitat2019, here("data/rd_habitat/bbmm_slice_habitat2019"))
-
-
-system.time(
-  bbmm_slice_habitat2020 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2020_2024-03-19.TIF"), filter(bbmm_road_slices_buff100, year == 2020)) %>% 
-    mutate(year = 2020)
-)
-saveRDS(bbmm_slice_habitat2020, here("data/rd_habitat/bbmm_slice_habitat2020"))
-
-
-system.time(
-  bbmm_slice_habitat2021 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2021_2024-03-19.TIF"), filter(bbmm_road_slices_buff100, year == 2021)) %>% 
-    mutate(year = 2021)
-)
-saveRDS(bbmm_slice_habitat2021, here("data/rd_habitat/bbmm_slice_habitat2021"))
-
-
-system.time(
-  bbmm_slice_habitat2022 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2022_2024-03-19.TIF"), filter(bbmm_road_slices_buff100, year == 2022)) %>% 
-    mutate(year = 2022)
-)
-saveRDS(bbmm_slice_habitat2022, here("data/rd_habitat/bbmm_slice_habitat2022"))
-
-
-system.time(
-  bbmm_slice_habitat2023 <- get_rd_habitat(rast("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_2023_2024-03-19.TIF"), filter(bbmm_road_slices_buff100, year == 2023)) %>% 
-    mutate(year = 2023)
-)
-saveRDS(bbmm_slice_habitat2023, here("data/rd_habitat/bbmm_slice_habitat2023"))
-
-
-# visualizing road segment habitat ----
-
-bbmm_slice_habitat2023 <- readRDS(here("data/rd_habitat/bbmm_slice_habitat2023")) %>% 
-  left_join(rds_seg_lengths) %>% 
-  mutate(crossed.prop = as.numeric(crossed.seg.length)/as.numeric(road.seg.length),
-         wt.mean.tre.shr = mean.tre.shr * crossed.prop)
-
-
-ggplot(bbmm_slice_habitat2016) +
-  geom_density(aes(x = mean.tre.shr)) +
-  geom_density(data = readRDS(here("data/rd_habitat/rd_habitat2016")), aes(x = mean.tre.shr), color = "red")
+ud_rd_seg_habitats <- readRDS(here("data/ud_rd_seg_habitats"))
 
 
 ggplot() +
-  geom_sf(data = rds_buff100_mean_tre_shr, aes(color = mean.tre.shr))
-
-
-
-
-# stream crossings. prob not using ----
-# filter entire CARI stream layer to just Napa and Sonoma counties - RUN THIS IN AZURE 
-st_layers("Z:/Libraries/Vector/CARI/CARI GISv0.2_SFEI2016_20171130/CARIv0.2.gdb")
-
-
-cari <- st_read("Z:/Libraries/Vector/CARI/CARI GISv0.2_SFEI2016_20171130/CARIv0.2.gdb", layer = "CARIv0_2_streams_final") %>% 
-  st_transform(crs = 26910)
-
-study_area_cari <- st_intersection(study_area_counties, cari)
-
-
-saveRDS(study_area_cari, here("data/study_area_cari"))
-
-# intersect roads and streams 
-
-study_area_cari <- readRDS(here("data/study_area_cari"))
-
-study_area_cari <- study_area_cari %>% 
-  mutate(Shape_Length = st_length(.),
-         Shape_Length = as.numeric(Shape_Length),
-         crick.group = ifelse(Shape_Length < 500, "crick", "creek"),
-         keep.class = case_when(orig_datas == "National Wetland Inventory (NWI)" & 
-                                  str_sub(orig_class, 1, 1) == "R" &
-                                  str_sub(orig_class, 2, 2) %in% c(2, 3)  ~ "keep",
-                                TRUE ~ NA))
-
-xx <- study_area_cari %>%
-  sf::st_touches(snap_radius = -1) 
-
-yy <- xx %>% lengths()
-  
-study_area_cari <- study_area_cari %>% 
-  mutate(num.touches = yy)
-
-study_area_cari %>% 
-  group_by(orig_datas) %>% 
-  count(orig_class) %>% 
-  view()
-
-  ggplot() +
-  geom_sf(data = study_area_cari, aes(color = as.factor(num.touches)))
-
+  #geom_sf(data = hr_uds) +
+  geom_sf(data = ud_rd_seg_habitats %>% filter(seg.label == "San Ramon Way_1")) +
+  geom_sf(data = napa_sonoma_rds_equal_segs %>% filter(seg.label == "San Ramon Way_1"))
 
 
 ggplot() +
-  geom_sf(data = filter(study_area_cari, Shape_Length > 150), aes(color = orig_datas))
-
+#  geom_sf(data = filter(all_rd_seg_habitats, seg.label == "San Ramon Way_1"), fill = NA, aes(color = as.character(buff))) +
+  geom_sf(data = zroad_buff, fill = NA) +
+  geom_sf(data = filter(zroad,  label == "San Ramon Way"), aes(color = seg.label))
