@@ -82,6 +82,8 @@ HR_UDS <- akde(analysis_table_tl,
                puma_fits)
 
 saveRDS(HR_UDS, here("model_objects/puma_hr_uds"))
+puma_hr_uds <- readRDS(here("model_objects/puma_hr_uds"))
+
 
 #Plot the data and HR estimates
 plot(analysis_table_tl[["P19"]],
