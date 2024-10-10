@@ -51,7 +51,14 @@ throughout these objects, step.id or  is generally the main "key" field and is a
   
 I copied the attributes for these road objects into data/exclude_roads2.csv so that I had a record of which segments were filtered out and so I could do the filtering programatically in R. An original version of this, data/exclude_roads.csv, also has all the Ct, Cir, and Way objects filtered out (Courts, Circles, and Ways), but I subsequently decided this was too strict a filter.  
 
-4. Still in ArcGIS Pro, use the Dissolve tool to combine segments into a single object for each named road. Then used the Frequency tool to count how many times each named road showed up in each city. Anywhere this number was >1, I investigated and further to see if there were further problem segments that needed to be added to data/exclude_roads2.csv. I focused only on multip part roads here where the total length was >1 km since I am likely ultimately going to filter out all roads <1km.  
+4. Still in ArcGIS Pro, use the Dissolve tool to combine segments into a single object for each named road. 
+Settings for the Dissolve tool:
+Dissolve Field = label
+Statistics Fields = objectid and leftcity, both with Statistic Type = Concatenate; Concatenation Separator = _
+Create multipart features = unchecked
+Unsplit lines = checked
+
+Then used the Frequency tool to count how many times each named road showed up in each city. Anywhere this number was >1, I investigated and further to see if there were further problem segments that needed to be added to data/exclude_roads2.csv. I focused only on multip part roads here where the total length was >1 km since I am likely ultimately going to filter out all roads <1km.  
 
 
 I iterated through steps 3 and 4 multiple times until I had a relatively tidy merged road layer.
