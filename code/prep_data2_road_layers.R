@@ -188,17 +188,17 @@ napa_sonoma_rds_filtered %>%
 
 
 
-zz <- full_join(read_xlsx(here("data/known_split_rds.xlsx"), sheet = "Sheet1") %>% 
+zz <- full_join(readxl::read_xlsx(here("data/known_split_rds.xlsx"), sheet = "Sheet1") %>% 
                   select(label_city, notes, checked1),
-                read_xlsx(here("data/known_split_rds.xlsx"), sheet = "Sheet2") %>% 
+                readxl::read_xlsx(here("data/known_split_rds.xlsx"), sheet = "Sheet2") %>% 
                   select(label_city) %>% 
                   mutate(round2 = TRUE)) %>% 
   full_join(read.csv(here("data/known_split_rds_check.csv"))) %>% 
-  full_join(read_xlsx(here("data/known_split_rds.xlsx"), sheet = "Sheet3") %>% 
+  full_join(readxl::read_xlsx(here("data/known_split_rds.xlsx"), sheet = "Sheet3") %>% 
               select(label_city) %>% 
               mutate(round3 = TRUE)) %>% 
   full_join(read.csv(here("data/known_split_rds_check2.csv"))) %>% 
-  full_join(read_xlsx(here("data/known_split_rds.xlsx"), sheet = "Sheet4") %>% 
+  full_join(readxl::read_xlsx(here("data/known_split_rds.xlsx"), sheet = "Sheet4") %>% 
               select(label_city) %>% 
               mutate(round4 = TRUE))
 
