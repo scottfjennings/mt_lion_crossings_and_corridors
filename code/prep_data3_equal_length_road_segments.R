@@ -22,8 +22,9 @@ source(here("code/utilities.R"))
 equal_length_segs <- st_read(here("data/napa_sonoma_rds_arc_merged.shp")) %>% 
   select(-Shape_Leng) %>% # Shape_Leng from ArcGIS is in survey feet, remove... 
   st_transform(crs = 26910) %>% # convert to UTM
-  mutate(seg.length = st_length(.)) %>%  # then recalculate segment length in meters
-  separate(label_city, c("label", "city"), sep = "_", remove = FALSE)
+  mutate(seg.length = st_length(.)) %>% # then recalculate segment length in meters
+  rename(label.city = label_city)
+
 
 
 # various data checking
@@ -64,38 +65,15 @@ ggplot() +
 
 
 
-equal_length_segs <- equal_length_segs %>% 
+equal_length_segs_clean <- equal_length_segs %>% 
+  select(-CONCATENAT) %>% 
   filter(as.numeric(seg.length) >= 1000) %>% # roads <1 km probably not very risky for mt lions
-  filter(!is.na(label)) %>%  # there are only 2 roads with label == NA and seg.length >= 1000
-  mutate(road.num = row_number()) %>% 
-  group_by(label, CONCATEN_1) %>% 
-  mutate(sub.road.num = row_number()) %>% 
-  ungroup()
-
-equal_length_segs_cities <- equal_length_segs %>%
-  data.frame() %>% 
-  select(label, CONCATEN_1) %>% 
-  mutate(CONCATEN_1 = strsplit(CONCATEN_1, "_")) %>%
-  unnest(CONCATEN_1) %>%
-  mutate(CONCATEN_1 = ifelse(CONCATEN_1 == "St Helena", "St. Helena", CONCATEN_1)) %>% 
-  distinct() %>% 
-  ungroup()
-
-distinct(equal_length_segs_cities, CONCATEN_1) %>% select("city" = CONCATEN_1) %>% arrange(city) %>% view()# write.csv("data/good_cities.csv", row.names = FALSE)
-# CONCATEN_1 is truncated such that it ends in partial city names with random number of letters
-# doesn't seem to be a tidy way to clean this with code
-# so manually edit the .csv
-# and use that to filter
-good_cities <- read.csv("data/good_cities.csv")
+  filter(!str_starts(label.city, "NA_")) %>%  # there are only 2 roads with label == NA and seg.length >= 1000
+  group_by(label.city) %>% 
+  mutate(label.city = ifelse(row_number() > 1, paste(label.city, row_number(), sep = "_"), label.city)) %>% 
+  ungroup() 
 
 
-equal_length_segs_clean <- equal_length_segs_cities %>% 
-  filter(CONCATEN_1 %in% good_cities$city) %>% 
-  group_by(label, road.num) %>% 
-  summarise(leftcity = paste(CONCATEN_1, collapse = "_")) %>% 
-  ungroup() %>% 
-  full_join(equal_length_segs %>% select(-contains("CONCATEN")))
-  mutate(label = paste(label, leftcity, sep = "_"))
 
 #
 # 1. combine segments into a single object for each named road ############  this now deprecated, see ArcGIS step above  ############----
@@ -276,30 +254,31 @@ napa_sonoma_rds_utm_merged <- napa_sonoma_rds_utm_merged %>%
 # mean bbmm crossing segment is 1300 m so starting with that
 
 
-#napa_sonoma_rds_utm_merged <- readRDS(here("data/napa_sonoma_rds_utm_merged"))
+#napa_sonoma_rds_utm_merged <- readRDS(here("data/archive_roads/napa_sonoma_rds_utm_merged"))
  
 
 make_road_pts <- function(zroad) {     
-  road_in <- filter(equal_length_segs_clean, label == zroad)
+  road_in <- filter(equal_length_segs_clean, label.city == zroad)
+  zdist = seq(0, as.numeric(road_in$seg.length), by = 1300)
   road_pts <- road_in %>%
     st_as_sfc() %>%   
-    st_line_interpolate(dist = seq(0, as.numeric(seg.length), by = 1300)) 
+    st_line_interpolate(dist = zdist) 
 }
 
 
-zroad = equal_length_segs_clean[612,]
-zz <- make_road_pts(zroad$label)
+zroad = equal_length_segs_clean$label.city[1]
+zz <- make_road_pts(zroad)
 
 
 system.time(
-  rd_pts <- map(equal_length_segs_clean$label, make_road_pts)
+  rd_pts <- map(equal_length_segs_clean$label.city, make_road_pts)
 )
-names(rd_pts) <- equal_length_segs_clean$label
+names(rd_pts) <- equal_length_segs_clean$label.city
 # 211 sec 9/30/24
 
 
 split_roads <- function(zroad) {
-  road_in <- filter(equal_length_segs_clean, label == zroad) 
+  road_in <- filter(equal_length_segs_clean, label.city == zroad) 
   
   road_splitter <- rd_pts[[zroad]] %>% 
     st_buffer(., 0.01) %>% 
@@ -310,19 +289,26 @@ split_roads <- function(zroad) {
     st_collection_extract(., "LINESTRING") %>% 
     mutate(seg.length = st_length(.)) %>% 
     filter(as.numeric(seg.length) > 1) %>% 
-    mutate(seg.label = paste(label, row_number(), sep = "_"))
+    mutate(seg.label = paste(label.city, row_number(), sep = "_"))
   
 }
 
 
 
 system.time(
-  napa_sonoma_rds_equal_segs <- map(equal_length_segs_clean$label, split_roads)
+  napa_sonoma_rds_equal_segs <- map(equal_length_segs_clean$label.city, split_roads)
 )
-names(napa_sonoma_rds_equal_segs) <- equal_length_segs_clean$label
+names(napa_sonoma_rds_equal_segs) <- equal_length_segs_clean$label.city
 # 317 sec 9/30/24
+# 17 sec 10/10/24 with Arc created merged roads
+
 
 saveRDS(napa_sonoma_rds_equal_segs, here("data/napa_sonoma_rds_equal_segs"))
+
+
+ggplot() +
+  geom_sf(data = road_in, linewidth = 3, color = "gray70") +
+  geom_sf(data = rd_split, aes(color = seg.label))
 
 
 
