@@ -17,18 +17,17 @@ source(here("code/utilities.R"))
 
 options(scipen = 999)
 
+# from analysis1_naive_road_crossing.R
+naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr"))
 
-road_crossing_steps <- readRDS(here("data/road_crossing_steps_napa_sonoma_2hr"))
+# from prep_data1_gps_data.R
 puma_steps <- readRDS(here("data/puma_steps")) %>% 
   mutate(step.dist.2hr = (step.dist/as.numeric(step.dur)) * 7200)
 
-# using crossing clusters from analysis2.5_crossing_step_clusters.R
+# from analysis2_crossing_step_clusters.R
+crossing_clusters_gps <- readRDS(here("data/crossing_clusters_gps_1step")) 
 
-crossing_clusters_gps <- readRDS(here("data/crossing_clusters_gps_1step")) # clusters of 2 before/after steps and 3 before/after points - this is the Zeller et al 2020 method
-#crossing_clusters_gps <- readRDS(here("data/crossing_clusters3_gps")) # clusters of 3 before/after steps and 4 before/after points
-
-
-# then fit the dBBMM to each of those 5 step clusters
+# then fit the dBBMM to each of those 3 step clusters
 
 
 #' calc_crossing_bbmm
