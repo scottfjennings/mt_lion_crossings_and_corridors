@@ -19,7 +19,7 @@ source(here("code/utilities.R"))
 # 
 
 
-equal_length_segs <- st_read(here("data/napa_sonoma_rds_arc_merged.shp")) %>% 
+napa_sonoma_rds_arc_merged <- st_read(here("data/napa_sonoma_rds_arc_merged.shp")) %>% 
   select(-Shape_Leng) %>% # Shape_Leng from ArcGIS is in survey feet, remove... 
   st_transform(crs = 26910) %>% # convert to UTM
   mutate(seg.length = st_length(.)) %>% # then recalculate segment length in meters
@@ -28,7 +28,7 @@ equal_length_segs <- st_read(here("data/napa_sonoma_rds_arc_merged.shp")) %>%
 
 
 # various data checking
-equal_length_segs %>% 
+napa_sonoma_rds_arc_merged %>% 
   data.frame() %>% 
   filter(!is.na(label)) %>% 
 #  filter(as.numeric(seg.length) >= 1300) %>% 
@@ -43,7 +43,7 @@ napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm"))
 napa_sonoma_rds_utm_buff <- napa_sonoma_rds_utm %>% 
   st_buffer(10, endCapStyle = "FLAT")
 
-zz <- st_intersection(equal_length_segs, napa_sonoma_rds_utm_buff)
+zz <- st_intersection(napa_sonoma_rds_arc_merged, napa_sonoma_rds_utm_buff)
 
 xx <- zz %>% 
   filter(label == label.1)
@@ -52,20 +52,20 @@ zlab = "Hillcrest Dr"
 
 ggplot() +
   geom_sf(data = filter(napa_sonoma_rds_utm_buff, label == zlab)) +
-  geom_sf(data = filter(equal_length_segs, label == zlab)) +
+  geom_sf(data = filter(napa_sonoma_rds_arc_merged, label == zlab)) +
   geom_sf(data = filter(xx, label == zlab), color = "red")
 
 
 ggplot() +
   #geom_sf(data = readRDS("data/napa_sonoma_rds"), color = "blue") +
-  geom_sf(data = equal_length_segs, color = "red") +
-  geom_sf(data = equal_length_segs %>% 
+  geom_sf(data = napa_sonoma_rds_arc_merged, color = "red") +
+  geom_sf(data = napa_sonoma_rds_arc_merged %>% 
             filter(!is.na(label)) %>% 
             filter(as.numeric(seg.length) >= 1000))
 
 
 
-equal_length_segs_clean <- equal_length_segs %>% 
+napa_sonoma_rds_arc_merged_clean <- napa_sonoma_rds_arc_merged %>% 
   select(-CONCATENAT) %>% 
   filter(as.numeric(seg.length) >= 1000) %>% # roads <1 km probably not very risky for mt lions
   filter(!str_starts(label.city, "NA_")) %>%  # there are only 2 roads with label == NA and seg.length >= 1000
@@ -73,6 +73,7 @@ equal_length_segs_clean <- equal_length_segs %>%
   mutate(label.city = ifelse(row_number() > 1, paste(label.city, row_number(), sep = "_"), label.city)) %>% 
   ungroup() 
 
+saveRDS(napa_sonoma_rds_arc_merged_clean, here("data/napa_sonoma_rds_arc_merged_clean"))
 
 
 #
@@ -250,15 +251,16 @@ napa_sonoma_rds_utm_merged <- napa_sonoma_rds_utm_merged %>%
   mutate(road.length = st_length(.))
 
 
-# 2. now split the merged road objects into equal length segments ----
+# 2a. now split the merged road objects into equal length segments ----
 # mean bbmm crossing segment is 1300 m so starting with that
 
 
 #napa_sonoma_rds_utm_merged <- readRDS(here("data/archive_roads/napa_sonoma_rds_utm_merged"))
  
+napa_sonoma_rds_arc_merged_clean <- readRDS(here("data/napa_sonoma_rds_arc_merged_clean"))
 
 make_road_pts <- function(zroad) {     
-  road_in <- filter(equal_length_segs_clean, label.city == zroad)
+  road_in <- filter(napa_sonoma_rds_arc_merged_clean, label.city == zroad)
   zdist = seq(0, as.numeric(road_in$seg.length), by = 1300)
   road_pts <- road_in %>%
     st_as_sfc() %>%   
@@ -266,19 +268,19 @@ make_road_pts <- function(zroad) {
 }
 
 
-zroad = equal_length_segs_clean$label.city[1]
+zroad = napa_sonoma_rds_arc_merged_clean$label.city[1]
 zz <- make_road_pts(zroad)
 
 
 system.time(
-  rd_pts <- map(equal_length_segs_clean$label.city, make_road_pts)
+  rd_pts <- map(napa_sonoma_rds_arc_merged_clean$label.city, make_road_pts)
 )
-names(rd_pts) <- equal_length_segs_clean$label.city
+names(rd_pts) <- napa_sonoma_rds_arc_merged_clean$label.city
 # 211 sec 9/30/24
 
 
 split_roads <- function(zroad) {
-  road_in <- filter(equal_length_segs_clean, label.city == zroad) 
+  road_in <- filter(napa_sonoma_rds_arc_merged_clean, label.city == zroad) 
   
   road_splitter <- rd_pts[[zroad]] %>% 
     st_buffer(., 0.01) %>% 
@@ -296,14 +298,15 @@ split_roads <- function(zroad) {
 
 
 system.time(
-  napa_sonoma_rds_equal_segs <- map(equal_length_segs_clean$label.city, split_roads)
+  napa_sonoma_rds_equal_segs <- map(napa_sonoma_rds_arc_merged_clean$label.city, split_roads)
 )
-names(napa_sonoma_rds_equal_segs) <- equal_length_segs_clean$label.city
+names(napa_sonoma_rds_equal_segs) <- napa_sonoma_rds_arc_merged_clean$label.city
 # 317 sec 9/30/24
 # 17 sec 10/10/24 with Arc created merged roads
 
 
 saveRDS(napa_sonoma_rds_equal_segs, here("data/napa_sonoma_rds_equal_segs"))
+napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs"))
 
 
 ggplot() +
@@ -311,8 +314,29 @@ ggplot() +
   geom_sf(data = rd_split, aes(color = seg.label))
 
 
+# 2b.  now split the merged road objects anywhere there is a road intersection ----
 
-# 3. make a shapefile with a buffered polygon for each road segment ----
+
+napa_sonoma_rds_intersections <- st_collection_extract(st_intersection(napa_sonoma_rds_arc_merged_clean), "POINT")
+
+ggplot() +
+  geom_sf(data = napa_sonoma_rds_intersection_splits %>% filter(label.city == "Adobe Rd_Penngrove"), aes(color = label.city.2)) +
+  geom_sf(data = napa_sonoma_rds_intersections %>% filter(label.city == "Adobe Rd_Penngrove"))
+
+
+
+napa_sonoma_rds_intersection_splits <- lwgeom::st_split(napa_sonoma_rds_arc_merged_clean, napa_sonoma_rds_intersections)
+napa_sonoma_rds_intersection_splits <- st_collection_extract(napa_sonoma_rds_intersection_splits, "LINESTRING") %>% 
+  group_by(label.city) %>% 
+  mutate(label.city.2 = paste(label.city, row_number(), sep = "_")) %>% 
+  ungroup()
+
+
+saveRDS(napa_sonoma_rds_intersection_splits, here("data/napa_sonoma_rds_intersection_splits"))
+
+
+
+# 3. NO RUN make a shapefile with a buffered polygon for each road segment ----
 
 napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
   bind_rows()
