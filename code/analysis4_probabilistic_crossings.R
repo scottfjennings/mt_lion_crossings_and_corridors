@@ -34,9 +34,8 @@ all_clusters_bbmm["P41_44132_132816"] <- NULL
 all_clusters_bbmm["P41_44132_132817"] <- NULL
 
 # need this to extract the road segments that were crossed
-# road_crossing_steps$geometry is the geometry of the road segment that is along the direct line of the step, not the step
-naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr")) %>% 
-  separate(label, "label", sep = "_")
+# road_crossing_steps$geometry is the geometry of the road segment that is along the direct line of the step, not the geometry of the step itself
+naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr")) 
 
 # list of crossing steps to loop through below 
 #crossing_steps <- prob_check %>% 
@@ -57,7 +56,7 @@ road_layer <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% bind_rows()
 # NO RUN ---- 
 # check how big the BBMM probability layer is. The probabilities seem to get funky with <50 cells. prob_checker() is in utilities.R
 prob_check <- map_df(names(all_clusters_bbmm), prob_checker)
-filter(prob_check, prob.size > 500) %>% nrow()
+filter(prob_check, prob.size > 50) %>% nrow()
 
 # NO RUN checking the relationship between step length of each cluster and the size of the resulting BBMM probability raster 
 zz <- prob_check %>% 
@@ -89,7 +88,7 @@ zz %>%
 #' @param zbbmm a BBMM object from BBMM::brownian.bridge()
 #' @param zlevel UD level in proportion (0-1) format 
 #'
-#' @return
+#' @return for each step, a df with a row for each cell in the BBMM UD at zlevel
 #'
 #' @examples bbmm_to_UD(all_clusters_bbmm[[1]])
 bbmm_to_UD <- function(zbbmm, zlevel = .9) {
@@ -139,13 +138,23 @@ return(rp)
 
 
 system.time(
-  all_ud_rast <- map(all_bbmm_ud, UD_to_raster), gcFirst = TRUE
+  all_ud_rast_safe <- map(all_bbmm_ud, safely(UD_to_raster)), gcFirst = TRUE
 )
-# ~ 27 sec
-names(all_ud_rast) <- names(all_clusters_bbmm)
+# ~ 60 sec
+names(all_ud_rast_safe) <- names(all_clusters_bbmm)
+
+# these ud can't be rasterized by terra::rast because they only have a single x or y coordinate 
+all_ud_rast_error <- map(all_ud_rast_safe, "error")[!sapply(map(all_ud_rast_safe, "error"), is.null)]
+
+# filter out errors
+all_ud_rast <- map(all_ud_rast_safe, "result")[sapply(map(all_ud_rast_safe, "error"), is.null)]
+
+
 saveRDS(all_ud_rast, here("model_objects/all_ud_rast_1step"))
 
-#xx <- map(all_ud_rast, "error")[!sapply(map(all_ud_rast, "error"), is.null)]
+
+
+
 
 # 3. id the section of road that is within the 90% UD. creates all_bbmm_roads ----
 
@@ -192,12 +201,20 @@ get_bbmm_crossing <- function(zcrossing.step) {
 
 
 system.time(
-  all_bbmm_roads <- map(crossing_steps, get_bbmm_crossing), gcFirst = TRUE
+  all_bbmm_roads_safe <- map(crossing_steps, safely(get_bbmm_crossing)), gcFirst = TRUE
 ) # ~420 sec, or 179
-names(all_bbmm_roads) <- crossing_steps
+names(all_bbmm_roads_safe) <- crossing_steps
+
+# these ud can't be rasterized by terra::rast because they only have a single x or y coordinate 
+all_bbmm_roads_error <- map(all_bbmm_roads_safe, "error")[!sapply(map(all_bbmm_roads_safe, "error"), is.null)]
+
+# filter out errors
+all_bbmm_roads <- map(all_bbmm_roads_safe, "result")[sapply(map(all_bbmm_roads_safe, "error"), is.null)]
+
+
 saveRDS(all_bbmm_roads, here("model_objects/all_bbmm_roads_1step"))
 
-# 4. filter out any continuous road objects that aren't crossed by the straight line step. creates crossed_bbmm_roads ----
+# 4. filter out any continuous road objects that aren't crossed by the straight line step (i.e. roads within the BBMM UD but not betweeen the 2 GPS points forming the step). creates crossed_bbmm_roads ----
 #' confirm_bbmm_rd_cross
 #' 
 #' confirm that the combined segments from combine_continuous() are along the straight line between the 2 crossing step end points
@@ -206,30 +223,28 @@ saveRDS(all_bbmm_roads, here("model_objects/all_bbmm_roads_1step"))
 #'
 #' @return
 #' @details
-#' this is used to filter out remaining roads that were not part of the crossed road
+#' this is used to filter out remaining roads that were not part of the crossed road, using the assumption that even if a road was within the BBMM UD, it probably was not crossed if the 2 points of the step are not on opposite sides of the road
 #' requires crossing_clusters_gps and all_bbmm_road_slices_continuous to be in the environment
 #' 
 #'
 #' @examples
 confirm_bbmm_rd_cross <- function(zcrossing.step) {
+  # get teh start and end GPS points for the step
   sp_step <- filter(crossing_clusters_gps, crossing.step == zcrossing.step, step.id == zcrossing.step | lag(step.id) == zcrossing.step)
-  
-  
+  # make into a spatial line
   step_line <- sp_step %>%
     st_as_sf(coords = c("easting", "northing"), crs = 26910) %>%
     group_by(crossing.step) %>%
     dplyr::summarize(do_union=FALSE) %>%  
     st_cast("LINESTRING") 
-  
+  # get the roads inside the BBMM UD for that step
   prob_road <- all_bbmm_roads[[zcrossing.step]]
-  
+  # double check that the step line crosses all those roads
   rd_cross <- st_intersection(prob_road, step_line) 
   
-  
   out_rd_cross <- prob_road %>% 
-    filter(label %in% rd_cross$label) %>% 
+    filter(seg.label %in% rd_cross$seg.label) %>% 
     st_as_sf()
-  
   
   return(out_rd_cross)
 }
@@ -238,11 +253,18 @@ confirm_bbmm_rd_cross <- function(zcrossing.step) {
 #xx <- crossing_steps[1:4]
 
 system.time(
-  crossed_bbmm_roads <- map(crossing_steps, confirm_bbmm_rd_cross), gcFirst = TRUE
+  crossed_bbmm_roads_safe <- map(crossing_steps, safely(confirm_bbmm_rd_cross)), gcFirst = TRUE
 )
-# 217 sec
+# 217 sec. 656 sec on 10/11/24 
+names(crossed_bbmm_roads_safe) <- crossing_steps
 
-names(crossed_bbmm_roads) <- crossing_steps
+# these ud can't be rasterized by terra::rast because they only have a single x or y coordinate 
+crossed_bbmm_roads_error <- map(crossed_bbmm_roads_safe, "error")[!sapply(map(crossed_bbmm_roads_safe, "error"), is.null)]
+
+# filter out errors
+crossed_bbmm_roads <- map(crossed_bbmm_roads_safe, "result")[sapply(map(crossed_bbmm_roads_safe, "error"), is.null)]
+
+
 saveRDS(crossed_bbmm_roads, here("model_objects/crossed_bbmm_roads_1step"))
 
 
@@ -281,8 +303,8 @@ prob_road_crossing_plotter <- function(zcrossing.step) {
   
   ggplot2::ggplot() +
     geom_sf(data = all_ud_rast[[zcrossing.step]]) +
-    geom_sf(data = road_slice, aes(color = seg.label)) +
-    geom_sf(data = all_bbmm_roads[[zcrossing.step]], aes(color = seg.label), alpha = 0.5, linewidth = 2)  +
+    geom_sf(data = road_slice, color = "gray20") +
+    geom_sf(data = all_bbmm_roads[[zcrossing.step]], color = "gray30", alpha = 0.5, linewidth = 2)  +
     geom_sf(data = crossed_bbmm_roads[[zcrossing.step]] %>% st_as_sf(), aes(color = seg.label), linewidth = 3)  +
     geom_path(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
     geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
@@ -302,7 +324,7 @@ bad_ud_steps <- c("P13_29892_26815", "P16_37473_47485", "P4_23163_122801")
 
 prob_road_crossing_plotter(bad_ud_steps[1])
 
-
+prob_road_crossing_plotter("P13_37473_38760")
 
 # example tricky crossings
 # prob_road_crossing_plotter("P1_37472_11128")
