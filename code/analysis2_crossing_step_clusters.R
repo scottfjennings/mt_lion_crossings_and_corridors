@@ -23,9 +23,12 @@ crossing_steps <- distinct(naive_crossings, step.id)
 # first need to ID the ~2 steps before and after each crossing
 
 
-#' extract.with.context
+#' get_step_clusters
+#' 
+#' get clusters of steps around a crossing step (e.g. the num.steps steps before and after each crossing step)
 #'
-#' @param zstep 
+#' @param zstep the step ID
+#' @param num.steps the number of steps before and after the crossing step to include in the cluster
 #'
 #' @return
 #' @details
@@ -33,7 +36,7 @@ crossing_steps <- distinct(naive_crossings, step.id)
 #' 
 #'
 #' @examples
-extract.with.context <- function(zstep, num.steps) {
+get_step_clusters <- function(zstep, num.steps) {
   
   match.idx  <- which(puma_steps$step.id == zstep)
   span       <- seq(from = (-1 * num.steps), to = num.steps)
@@ -49,7 +52,7 @@ extract.with.context <- function(zstep, num.steps) {
 
 
 system.time(
-  neighbor_steps_all <- map2_df(distinct(naive_crossings, step.id)$step.id, 1, extract.with.context), gcFirst = TRUE
+  neighbor_steps_all <- map2_df(distinct(naive_crossings, step.id)$step.id, 1, get_step_clusters), gcFirst = TRUE
 )
 
 
@@ -73,7 +76,7 @@ crossing_clusters <- ok_step_dur %>%
   mutate(cluster.step.num = row_number()) %>% 
   ungroup()
 
-# first need to decompose each step back into simple GPS points
+# decompose each step back into simple GPS points
 
 crossing_clusters_gps <- crossing_clusters %>%  
   data.frame() %>% 

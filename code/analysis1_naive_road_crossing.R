@@ -15,14 +15,26 @@ source(here("code/utilities.R"))
 puma_steps <- readRDS(here("data/puma_steps")) %>% 
   #  filter(between(as.numeric(step.dur), 2700, 43200)) %>%  # 45 min and 12 hr
   filter(between(as.numeric(step.dur), 6600, 7800)) # 110 min and 130 min 
-# limiting data to just steps 120 +- 20 min to just consider movement behavior near the time of the road crossing
+# limiting data to just steps 120 +- 10 min to just consider movement behavior near the time of the road crossing
 
 # road layer in UTM
-napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm"))
+#napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm"))
+
+# as of Oct 2024 using the equal length segment road layer from prep_data3_equal_length_road_segments.R
+napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
+  bind_rows(.id = "label") %>% 
+  st_as_sf() %>% 
+  st_transform(crs = 26910)
+
+
+
 
 # functions ----
 
 # find which road segments were crossed by lion steps ----
+
+
+# zstep = puma_steps$step.id[1]
 
 get_naive_crossed_rds <- function(zstep) {
 step <- filter(puma_steps, step.id == zstep)
@@ -41,17 +53,22 @@ step_line <- sp_step %>%
 
 road_slicer <- st_bbox(step_line)  %>% st_as_sfc()
 
-road_slice <- st_intersection(napa_sonoma_rds_utm, road_slicer)
+road_slice <- st_intersection(napa_sonoma_rds_equal_segs, road_slicer)
 
 #rd_cross <- st_intersection(step_line, road_slice) 
 
 rd_cross <- st_intersects(step_line, road_slice) 
-out_rd_cross <- road_slice[unlist(rd_cross),] %>% 
-  mutate(step.id = zstep)
+out_rd_cross <- road_slice[unlist(rd_cross),] 
 
-}
+out_crossed_roads <- napa_sonoma_rds_equal_segs %>% 
+  filter(seg.label %in% out_rd_cross$seg.label) %>% 
+  mutate(step.id = zstep)
+  
+  }
 
 # xx <- filter(puma_steps, animal.id == "P21", collar.id == 37474)
+
+yy <- get_naive_crossed_rds("P13_90388_40336")
 
 # xx <- puma_steps[1:4,]
 system.time(
