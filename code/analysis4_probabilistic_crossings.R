@@ -2,6 +2,15 @@
 
 # use utilization distributions from BBMM (from analysis3_fit_BBMM.R) to ID probabilistic road crossing areas
 
+# the main logic here is that for most crossing steps, the most parsimonious crossed section of road is the part that the straight line step crosses extending outward in each direction to the first road intersection. 
+# this is most parsimonious because extending out past the first intersection would require that the mt lion made multiple crossings.
+# however, for some steps (e.g. P13_37473_36228, P13_29892_22992) the straight line crosses multiple roads and a non-straight line crosses fewer roads, which would then be the most parsimonious path following the above logic.
+# I'm not sure yet (10/11/24) how to find the least cost path crossing the fewest roads, so for now I think I'll filter out the steps that have multiple crossings.
+# there remains the problem of roads that end inside the BBMM UD, giving the possibility for the mt lion to go around the end of the road with no crossing.
+# I'm also not sure how to even ID all those situations, let alone how to fix them. 
+# the solution to that might be related to the multiple crossing solution
+# I need a method to find the path within the BBMM UD that crosses the fewest roads.
+
 library(tidyverse)
 library(here)
 library(sf)
@@ -34,7 +43,7 @@ all_clusters_bbmm["P41_44132_132816"] <- NULL
 all_clusters_bbmm["P41_44132_132817"] <- NULL
 
 # need this to extract the road segments that were crossed
-# road_crossing_steps$geometry is the geometry of the road segment that is along the direct line of the step, not the geometry of the step itself
+# road_crossing_steps$geometry is the geometry of the road segment that is crossed by the direct line of the step, not the geometry of the step itself
 naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr")) 
 
 # list of crossing steps to loop through below 
@@ -51,7 +60,9 @@ crossing_steps <- names(all_clusters_bbmm)
 # this is a single object (LINESTRING) for each named road
 #road_layer <- readRDS(here("data/napa_sonoma_rds_utm_merged")) %>% bind_rows()
 # this is the roads split into equal length segments (1300m as of July 29, 2024)
-road_layer <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% bind_rows()
+napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% bind_rows()
+# this is the roads split anywehre there's an intersection
+napa_sonoma_rds_intersection_splits <- readRDS(here("data/napa_sonoma_rds_intersection_splits")) %>% bind_rows()
 #
 # NO RUN ---- 
 # check how big the BBMM probability layer is. The probabilities seem to get funky with <50 cells. prob_checker() is in utilities.R
@@ -110,18 +121,18 @@ bbmm_to_UD <- function(zbbmm, zlevel = .9) {
 system.time(
   all_bbmm_ud <- map(all_clusters_bbmm, bbmm_to_UD), gcFirst = TRUE
 )
-# ~ 20 sec
+# ~ 20 sec; 34
 names(all_bbmm_ud) <- names(all_clusters_bbmm)
 saveRDS(all_bbmm_ud, here("model_objects/all_bbmm_ud_1step"))
 
 # 2. create a raster for each UD. creates all_ud_rast ---- 
 #' UD_to_raster
 #' 
-#' create a raster of a Utilization Distribution from the BBMM model objects created in analysis3_fit_BBMM. should work on any output from BBMM::brownian.bridge()
+#' create a raster of a Utilization Distribution from the BBMM model objects created in analysis3_fit_BBMM. then create a polygon from the outline of that raster should work on any output from BBMM::brownian.bridge()
 #'
 #' @param zud a data frame representing a Utilization Distribution. generally the result of bbmm_to_UD(). must have at least columns x, y, and probability
 #'
-#' @return a terra raster object projected as UTM zone 10N and with all cell values set to 1
+#' @return a terra::as.polygons object projected as UTM zone 10N
 #'
 #' @examples ud_rast <- UD_to_raster(bbmm_ud)
 UD_to_raster <- function(zud) {
@@ -158,26 +169,129 @@ saveRDS(all_ud_rast, here("model_objects/all_ud_rast_1step"))
 
 # 3. id the section of road that is within the 90% UD. creates all_bbmm_roads ----
 
+all_ud_rast <- readRDS(here("model_objects/all_ud_rast_1step"))
+napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% bind_rows()
+
+
+
 # zcrossing.step = crossing_steps$crossing.step[272]
 
 # zcrossing.step = "P1_23163_2781"
 
-#' get_bbmm_crossing
+
+
+#' get_bbmm_crossed_intersection_seg
 #' 
-#' id the section of road that is within the 90% UD 
+#' get road that is within the 90% UD and was crossed by the puma step
 #'
 #' @param zcrossing.step character string indicating the ID for the cluster of points to evaluate
-#' @details depending on what was loaded as road.layer above, output can serve different purposes. If napa_sonoma_rds_equal_segs, then allows calculating number of crossings per equal length segment for the full analysis. If napa_sonoma_rds_merged allows calculating the length of BBMM crossed segments to determine what size to cut the road layer into to create napa_sonoma_rds_equal_segs. 
+#' @details 
 #'
 #' @return
 
 #' 
 #'
+#' @examples 
+get_bbmm_crossed_intersection_seg <- function(zcrossing.step) {
+# zcrossing.step <- "P16_37473_50936"
+  # read UD raster  
+  rp <- all_ud_rast[[zcrossing.step]]
+# get the whole named road that was crossed  
+  crossed_road <- naive_crossings %>% 
+    filter(step.id == zcrossing.step) %>% 
+    data.frame() %>% 
+    select(label.city, -geometry) %>% 
+    left_join(napa_sonoma_rds_intersection_splits)
+# 
+  bbmm_crossed_road <- st_intersection(st_as_sf(crossed_road), st_as_sf(rp))
+  
+  # get teh start and end GPS points for the step
+  sp_step <- filter(crossing_clusters_gps, crossing.step == zcrossing.step, step.id == zcrossing.step | lag(step.id) == zcrossing.step)
+  # make into a spatial line
+  step_line <- sp_step %>%
+    st_as_sf(coords = c("easting", "northing"), crs = 26910) %>%
+    group_by(crossing.step) %>%
+    dplyr::summarize(do_union=FALSE) %>%  
+    st_cast("LINESTRING")
+  
+  bbmm_road_slice_crossing <- st_intersection(bbmm_crossed_road, step_line)
+  crossed_bbmm_road_slice <- bbmm_crossed_road %>% 
+    filter(label.city.2 %in% bbmm_road_slice_crossing$label.city.2) 
+  
+  return(crossed_bbmm_road_slice)
+  
+}
+
+zz <- get_bbmm_crossed_intersection_seg("P16_37473_50936")
+
+
+system.time(
+  bbmm_crossed_intersection_seg_safe <- map(crossing_steps, safely(get_bbmm_crossed_intersection_seg)), gcFirst = TRUE
+) # 980 sec (15 min)
+names(bbmm_crossed_intersection_seg_safe) <- crossing_steps
+
+# these are the errors 
+bbmm_crossed_intersection_seg_error <- map(bbmm_crossed_intersection_seg_safe, "error")[!sapply(map(bbmm_crossed_intersection_seg_safe, "error"), is.null)]
+
+# this is without errors
+bbmm_crossed_intersection_seg <- map(bbmm_crossed_intersection_seg_safe, "result")[sapply(map(bbmm_crossed_intersection_seg_safe, "error"), is.null)]
+
+saveRDS(bbmm_crossed_intersection_seg, here("data/bbmm_crossed_intersection_seg"))
+
+#' get_bbmm_crossed_equal_seg
+#' 
+#' get the equal length crossed segments in the BBMM UD
+#'
+#' @param zcrossing.step 
+#'
+#' @return
+#' @export
+#'
 #' @examples
-get_bbmm_crossing <- function(zcrossing.step) {
+get_bbmm_crossed_equal_seg <- function(zcrossing.step) {
+  
+  crossed_bbmm_road_slice <- bbmm_crossed_intersection_seg[[zcrossing.step]]
+  
+  crossed_bbmm_equal_length <- st_intersection(napa_sonoma_rds_equal_segs, crossed_bbmm_road_slice) %>% 
+    st_collection_extract("LINESTRING") %>% 
+    select(-contains("label.city."))
+  return(crossed_bbmm_equal_length)
+}
+
+#xx <- get_bbmm_crossed_equal_seg(zcrossing.step)
+system.time(
+  bbmm_crossed_equal_seg_safe <- map(crossing_steps, safely(get_bbmm_crossed_equal_seg)), gcFirst = TRUE
+) # 152
+names(bbmm_crossed_equal_seg_safe) <- crossing_steps
+
+# these are the errors 
+bbmm_crossed_equal_seg_error <- map(bbmm_crossed_equal_seg_safe, "error")[!sapply(map(bbmm_crossed_equal_seg_safe, "error"), is.null)]
+
+# this is without errors
+bbmm_crossed_equal_seg <- map(bbmm_crossed_equal_seg_safe, "result")[sapply(map(bbmm_crossed_equal_seg_safe, "error"), is.null)]
+
+saveRDS(bbmm_crossed_equal_seg, here("data/bbmm_crossed_equal_seg"))
+
+
+#' get_all_bbmm_roads
+#' 
+#' get all roads that are within the 90% UD for a step 
+#'
+#' @param zcrossing.step character string indicating the ID for the cluster of points to evaluate
+#' @param road_layer one of c("napa_sonoma_rds_equal_segs", "napa_sonoma_rds_intersection_splits")
+#' @details depending on which df you set as road_layer, output can serve different purposes. If napa_sonoma_rds_equal_segs, then allows calculating number of crossings per equal length segment for the full analysis. If napa_sonoma_rds_merged allows calculating the length of BBMM crossed segments to determine what size to cut the road layer into to create napa_sonoma_rds_equal_segs. if napa_sonoma_rds_intersection_splits allows IDing the mast parsimonious overall crossed segment of road (THIS NEEDS TESTING/CONFIRMATION)
+#'
+#' @return
+
+#' 
+#'
+#'
+#' @examples
+get_all_bbmm_roads <- function(road_layer = napa_sonoma_rds_equal_segs, zcrossing.step) {
   
   # read UD raster  
   rp <- all_ud_rast[[zcrossing.step]]
+  
   
   # clip the road layer to cut down computing time for the main st_intersection below
   road_slicer <- st_bbox(rp)  %>% st_as_sfc()
@@ -213,62 +327,8 @@ all_bbmm_roads <- map(all_bbmm_roads_safe, "result")[sapply(map(all_bbmm_roads_s
 
 
 saveRDS(all_bbmm_roads, here("model_objects/all_bbmm_roads_1step"))
+all_bbmm_roads <- readRDS(here("model_objects/all_bbmm_roads_1step"))
 
-# 4. filter out any continuous road objects that aren't crossed by the straight line step (i.e. roads within the BBMM UD but not betweeen the 2 GPS points forming the step). creates crossed_bbmm_roads ----
-#' confirm_bbmm_rd_cross
-#' 
-#' confirm that the combined segments from combine_continuous() are along the straight line between the 2 crossing step end points
-#'
-#' @param zstep 
-#'
-#' @return
-#' @details
-#' this is used to filter out remaining roads that were not part of the crossed road, using the assumption that even if a road was within the BBMM UD, it probably was not crossed if the 2 points of the step are not on opposite sides of the road
-#' requires crossing_clusters_gps and all_bbmm_road_slices_continuous to be in the environment
-#' 
-#'
-#' @examples
-confirm_bbmm_rd_cross <- function(zcrossing.step) {
-  # get teh start and end GPS points for the step
-  sp_step <- filter(crossing_clusters_gps, crossing.step == zcrossing.step, step.id == zcrossing.step | lag(step.id) == zcrossing.step)
-  # make into a spatial line
-  step_line <- sp_step %>%
-    st_as_sf(coords = c("easting", "northing"), crs = 26910) %>%
-    group_by(crossing.step) %>%
-    dplyr::summarize(do_union=FALSE) %>%  
-    st_cast("LINESTRING") 
-  # get the roads inside the BBMM UD for that step
-  prob_road <- all_bbmm_roads[[zcrossing.step]]
-  # double check that the step line crosses all those roads
-  rd_cross <- st_intersection(prob_road, step_line) 
-  
-  out_rd_cross <- prob_road %>% 
-    filter(seg.label %in% rd_cross$seg.label) %>% 
-    st_as_sf()
-  
-  return(out_rd_cross)
-}
-
-#xx <- confirm_bbmm_rd_cross(crossing_steps[2])
-#xx <- crossing_steps[1:4]
-
-system.time(
-  crossed_bbmm_roads_safe <- map(crossing_steps, safely(confirm_bbmm_rd_cross)), gcFirst = TRUE
-)
-# 217 sec. 656 sec on 10/11/24 
-names(crossed_bbmm_roads_safe) <- crossing_steps
-
-# these ud can't be rasterized by terra::rast because they only have a single x or y coordinate 
-crossed_bbmm_roads_error <- map(crossed_bbmm_roads_safe, "error")[!sapply(map(crossed_bbmm_roads_safe, "error"), is.null)]
-
-# filter out errors
-crossed_bbmm_roads <- map(crossed_bbmm_roads_safe, "result")[sapply(map(crossed_bbmm_roads_safe, "error"), is.null)]
-
-
-saveRDS(crossed_bbmm_roads, here("model_objects/crossed_bbmm_roads_1step"))
-
-
-#
 # check how these crossings look ----
 
 # comparing the number of road objects from get_bbmm_crossing and confirm_bbmm_rd_cross
@@ -304,8 +364,9 @@ prob_road_crossing_plotter <- function(zcrossing.step) {
   ggplot2::ggplot() +
     geom_sf(data = all_ud_rast[[zcrossing.step]]) +
     geom_sf(data = road_slice, color = "gray20") +
-    geom_sf(data = all_bbmm_roads[[zcrossing.step]], color = "gray30", alpha = 0.5, linewidth = 2)  +
-    geom_sf(data = crossed_bbmm_roads[[zcrossing.step]] %>% st_as_sf(), aes(color = seg.label), linewidth = 3)  +
+    geom_sf(data = all_bbmm_roads[[zcrossing.step]], aes(color = seg.label), alpha = 0.5)  +
+    geom_sf(data = bbmm_crossed_intersection_seg[[zcrossing.step]] %>% st_as_sf(), aes(color = label.city.2), linewidth = 4, alpha = 0.5) +
+    geom_sf(data = bbmm_crossed_equal_seg[[zcrossing.step]] %>% st_as_sf(), aes(color = seg.label), linewidth = 2) +
     geom_path(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
     geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
     geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step, (step.id == zcrossing.step | lag(step.id) == zcrossing.step)), aes(x = easting, y = northing, color = step.id), size = 4) +
@@ -325,6 +386,7 @@ bad_ud_steps <- c("P13_29892_26815", "P16_37473_47485", "P4_23163_122801")
 prob_road_crossing_plotter(bad_ud_steps[1])
 
 prob_road_crossing_plotter("P13_37473_38760")
+prob_road_crossing_plotter("P1_11082_9")
 
 # example tricky crossings
 # prob_road_crossing_plotter("P1_37472_11128")
@@ -349,10 +411,94 @@ ggsave(here("figures/test_ud_crossings/P1_37472_12518_1step.png"))
 prob_road_crossing_plotter("P16_37473_47255") # blob UD catches a lot of road
 ggsave(here("figures/test_ud_crossings/P16_37473_47255_1step.png"))
 
+# as of 10/11/24 this new method generally seems to do a good job of getting the right looking road
+# but naive steps that cross multiple roads are still a problem
+# will probably filter those out for now, for TWS and CADFW mt lion working group meeting
+
+num_crossings <- naive_crossings %>% 
+  data.frame() %>% 
+  select(-geometry) %>% 
+  distinct(step.id, label.city) %>% 
+  group_by(step.id) %>% 
+  count()
+
 
 
 # funky movements
 # prob_road_crossing_plotter("P16_37473_50642")
+
+
+########################  BELOW HERE PROBABLY NO LONGER NEEDED (10/11/24) #############################
+
+
+# 4. filter out any continuous road objects that aren't crossed by the straight line step (i.e. roads within the BBMM UD but not betweeen the 2 GPS points forming the step). creates crossed_bbmm_roads ----
+#' confirm_bbmm_rd_cross
+#' 
+#' confirm that the combined segments from combine_continuous() are along the straight line between the 2 crossing step end points
+#'
+#' @param zstep 
+#'
+#' @return
+#' @details
+#' this is used to filter out remaining roads that were not part of the crossed road, using the assumption that even if a road was within the BBMM UD, it probably was not crossed if the 2 points of the step are not on opposite sides of the road
+#' requires crossing_clusters_gps and all_bbmm_road_slices_continuous to be in the environment
+#' 
+#'
+#' @examples
+confirm_bbmm_rd_cross <- function(zcrossing.step) {
+  # get teh start and end GPS points for the step
+  sp_step <- filter(crossing_clusters_gps, crossing.step == zcrossing.step, step.id == zcrossing.step | lag(step.id) == zcrossing.step)
+  # make into a spatial line
+  step_line <- sp_step %>%
+    st_as_sf(coords = c("easting", "northing"), crs = 26910) %>%
+    group_by(crossing.step) %>%
+    dplyr::summarize(do_union=FALSE) %>%  
+    st_cast("LINESTRING") 
+  # get the equal segment length roads inside the BBMM UD for that step
+  prob_road <- all_bbmm_roads[[zcrossing.step]]
+  # use that to get the merged roads
+  prob_road_merged <- napa_sonoma_rds_arc_merged_clean %>% 
+    filter(label.city %in% prob_road$label.city)
+  # cut the merged roads at any intersections. from: https://stackoverflow.com/questions/71394190/connect-linestrings
+  p <- st_collection_extract(st_intersection(prob_road_merged), "POINT")
+  q <- lwgeom::st_split(prob_road_merged, p)
+  q <- st_collection_extract(q, "LINESTRING") %>% 
+    group_by(label.city) %>% 
+    mutate(label.city.2 = paste(label.city, row_number(), sep = "_")) %>% 
+    ungroup()
+  # find which "cut" merged roads the step line crosses
+  rd_cross_merged <- st_intersection(q, step_line) 
+  rd_cross_merged_out <- q %>% 
+    filter(label.city.2 %in% rd_cross_merged$label.city.2)
+  # use the crossed cut merged roads to get the equal length segment roads
+  rd_cross <- st_intersection(rd_cross_merged_out, prob_road) %>% 
+    st_collection_extract("LINESTRING")
+  
+  
+  return(out_rd_cross)
+}
+
+
+#xx <- confirm_bbmm_rd_cross(zcrossing.step)
+#xx <- crossing_steps[1:4]
+
+system.time(
+  crossed_bbmm_roads_safe <- map(crossing_steps, safely(confirm_bbmm_rd_cross)), gcFirst = TRUE
+)
+# 217 sec. 656 sec on 10/11/24 
+names(crossed_bbmm_roads_safe) <- crossing_steps
+
+# these ud can't be rasterized by terra::rast because they only have a single x or y coordinate 
+crossed_bbmm_roads_error <- map(crossed_bbmm_roads_safe, "error")[!sapply(map(crossed_bbmm_roads_safe, "error"), is.null)]
+
+# filter out errors
+crossed_bbmm_roads <- map(crossed_bbmm_roads_safe, "result")[sapply(map(crossed_bbmm_roads_safe, "error"), is.null)]
+
+
+saveRDS(crossed_bbmm_roads, here("model_objects/crossed_bbmm_roads_1step"))
+
+
+#
 
 # 6. combine adjacent road segments into continuous objects ---- 
 
