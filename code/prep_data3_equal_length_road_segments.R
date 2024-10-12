@@ -316,6 +316,8 @@ ggplot() +
 
 # 2b.  now split the merged road objects anywhere there is a road intersection ----
 
+napa_sonoma_rds_arc_merged_clean <- readRDS(here("data/napa_sonoma_rds_arc_merged_clean")) %>% 
+  select(-seg.length)
 
 napa_sonoma_rds_intersections <- st_collection_extract(st_intersection(napa_sonoma_rds_arc_merged_clean), "POINT")
 
