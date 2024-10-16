@@ -69,7 +69,7 @@ get_hr_road_habitat <- function(zpuma, zyear) {
   
   buffer_roads <- function(zbuff) {
   buff_road <- hr_roads %>% 
-    group_by(label, seg.label, road.seg.length, hr.seg.length) %>% 
+    group_by(label.city, seg.label, road.seg.length, hr.seg.length) %>% 
     st_buffer(., zbuff, endCapStyle = "ROUND") %>% 
     mutate(buff = zbuff)
   }
@@ -78,7 +78,7 @@ get_hr_road_habitat <- function(zpuma, zyear) {
   
   hr_road_buffers_df <- hr_road_buffers %>% 
     data.frame() %>% 
-    select(label, seg.label, buff) %>% 
+    select(label.city, seg.label, buff) %>% 
     mutate(ID = row_number())
   
   # extract habitat along roads
@@ -104,7 +104,7 @@ get_hr_road_habitat <- function(zpuma, zyear) {
            tre.shr = TRE + SHR)
   
   rds_buff_mean_tre_shr_dev <- tre_shr_dev %>% 
-    group_by(label, seg.label, buff) %>% 
+    group_by(label.city, seg.label, buff) %>% 
     summarise(mean.dev = mean(Development),
               mean.tre = mean(TRE),
               mean.shr = mean(SHR),
@@ -113,8 +113,8 @@ get_hr_road_habitat <- function(zpuma, zyear) {
     ungroup() %>% 
     full_join(hr_roads) %>% 
     st_as_sf() %>% 
-    mutate(year = zyear,
-           animal.id == zpuma)
+    dplyr::mutate(year = zyear,
+                  animal.id = zpuma)
   
   return(rds_buff_mean_tre_shr_dev)
   }
@@ -122,7 +122,7 @@ get_hr_road_habitat <- function(zpuma, zyear) {
 
 system.time(
   all_hr_road_habitat  <- map2_df(puma_years$puma, puma_years$year, get_hr_road_habitat)
-)
+) # 11678 10/15/24
 
 saveRDS(all_hr_road_habitat, here("data/all_hr_road_habitat"))
 all_hr_road_habitat <- readRDS(here("data/all_hr_road_habitat"))
