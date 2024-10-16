@@ -179,12 +179,31 @@ napa_sonoma_rds_filtered <- napa_sonoma_rds %>%
   filter(pubpriv != "Private") %>% 
   mutate(label.city = paste(label, leftcity, sep = "_"))
 
-napa_sonoma_rds_filtered %>% 
-  ggplot() +
-  geom_bar(aes(x = class))
+
+sonoma_speed <- st_read("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/sonoma_county_speed_limits/Speed_Limits_(County-Maintained_Roads).shp") %>% 
+  select(RoadName, SpeedLmt, geometry)
+
+ggplot() + 
+  geom_sf(data = sonoma_speed %>% filter(RoadName == "Ludwig Ave"), linewidth = 2, alpha = 0.5) +
+  geom_sf(data = napa_sonoma_rds_filtered %>% filter(label == "Ludwig Ave")) +
+  geom_sf(data = napa_sonoma_rds_filtered_speed %>% filter(label == "Ludwig Ave"), color = "red")
+
+napa_sonoma_rds_filtered_speed <- st_join(sonoma_speed, napa_sonoma_rds_filtered, join = st_touches)
+
+ggplot() +
+  geom_sf(data = napa_sonoma_rds_filtered_speed %>% filter(label == "Ludwig Ave", RoadName == "Ludwig Ave"))
 
 napa_sonoma_rds_filtered %>%  
   st_write(., "data/napa_sonoma_rds_filtered2.shp", append = FALSE)
+
+saveRDS(napa_sonoma_rds_filtered, here("data/napa_sonoma_rds_filtered2"))
+
+
+# checking
+
+napa_sonoma_rds_filtered %>% 
+  ggplot() +
+  geom_bar(aes(x = class))
 
 
 
@@ -206,6 +225,13 @@ zz %>%
   filter(checked2 == "fixed" & round3 == TRUE) %>%
   mutate(checked3 = "") %>% 
   write.csv(here("data/known_split_rds_check2.csv"), row.names = FALSE)
+
+
+
+
+
+
+
 
 
 ##############  below here probably not needed as of 10/8/24 #############
