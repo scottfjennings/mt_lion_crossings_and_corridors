@@ -303,7 +303,12 @@ system.time(
 names(napa_sonoma_rds_equal_segs) <- napa_sonoma_rds_arc_merged_clean$label.city
 # 317 sec 9/30/24
 # 17 sec 10/10/24 with Arc created merged roads
-
+napa_sonoma_rds_equal_segs %>% 
+#readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
+  bind_rows(.id = "label") %>% 
+  st_as_sf() %>% 
+  st_transform(crs = 26910) %>% 
+  st_write("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/napa_sonoma_main_roads/napa_sonoma_rds_equal_segs.shp", append = FALSE)
 
 saveRDS(napa_sonoma_rds_equal_segs, here("data/napa_sonoma_rds_equal_segs"))
 napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs"))
