@@ -13,16 +13,21 @@
 #'
 #' @examples
 abbreviate_roads <- function(road.col) {
-  road.col.out = case_when(str_detect(road.col, " Road") ~ str_replace(road.col, "Road", "Rd"),
-                           str_detect(road.col, " Street") ~ str_replace(road.col, "Street", "St"),
-                           str_detect(road.col, " Drive") ~ str_replace(road.col, "Drive", "Dr"),
-                           str_detect(road.col, " Avenue") ~ str_replace(road.col, "Avenue", "Ave"),
-                           str_detect(road.col, " Connector") ~ str_replace(road.col, "Connector", "Connctr"),
+  road.col.out = case_when(str_detect(road.col, "Road") ~ str_replace(road.col, "Road", "Rd"),
+                           str_detect(road.col, "Street") ~ str_replace(road.col, "Street", "St"),
+                           str_detect(road.col, "Drive") ~ str_replace(road.col, "Drive", "Dr"),
+                           str_detect(road.col, "Avenue") ~ str_replace(road.col, "Avenue", "Ave"),
+                           str_detect(road.col, "Connector") ~ str_replace(road.col, "Connector", "Connctr"),
                            str_detect(road.col, " Lane") ~ str_replace(road.col, "Lane", "Ln"),
-                           str_detect(road.col, " Terrace") ~ str_replace(road.col, "Terrace", "Terr"),
-                           str_detect(road.col, " State Highway") ~ str_replace(road.col, "State Highway", "Hwy"), # this needs to go before Highway to Hwy
-                           str_detect(road.col, " Highway") ~ str_replace(road.col, "Highway", "Hwy"),
-                           str_detect(road.col, "State Route") ~ str_replace(road.col, "State Route", "Sr"),
+                           str_detect(road.col, "Terrace") ~ str_replace(road.col, "Terrace", "Ter"),
+                           str_detect(road.col, "U.s. Highway") ~ str_replace(road.col, "U.s. Highway", "Hwy"), # this needs to go before Highway to Hwy
+                           str_detect(road.col, "Us Highway") ~ str_replace(road.col, "Us Highway", "Hwy"), # this needs to go before Highway to Hwy
+                           str_detect(road.col, "State Highway") ~ str_replace(road.col, "State Highway", "Hwy"), # this needs to go before Highway to Hwy
+                           str_detect(road.col, "^\\Sr ") ~ str_replace(road.col, "^\\Sr ", "Hwy "), # road name starts with Sr . needs to have the followng space ^\\ is starts with in regex
+                           str_detect(road.col, "State Route") ~ str_replace(road.col, "State Route", "Hwy"),
+                           str_detect(road.col, "St Rte") ~ str_replace(road.col, "St Rte", "Hwy"),
+                           str_detect(road.col, "State Rte") ~ str_replace(road.col, "State Rte", "Hwy"),
+                           str_detect(road.col, "Highway") ~ str_replace(road.col, "Highway", "Hwy"),
                            str_detect(road.col, " Circle") ~ str_replace(road.col, "Circle", "Cir"),
                            TRUE ~ road.col)
 }
