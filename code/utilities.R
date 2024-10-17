@@ -1,5 +1,35 @@
 
 
+
+
+#' abbreviate_roads
+#' 
+#' change road full names (e.g., Road, Street) to abbreviations (e.g. Rd, St)
+#'
+#' @param road.col the data frame column with road names
+#'
+#' @return
+#' @export
+#'
+#' @examples
+abbreviate_roads <- function(road.col) {
+  road.col.out = case_when(str_detect(road.col, " Road") ~ str_replace(road.col, "Road", "Rd"),
+                           str_detect(road.col, " Street") ~ str_replace(road.col, "Street", "St"),
+                           str_detect(road.col, " Drive") ~ str_replace(road.col, "Drive", "Dr"),
+                           str_detect(road.col, " Avenue") ~ str_replace(road.col, "Avenue", "Ave"),
+                           str_detect(road.col, " Connector") ~ str_replace(road.col, "Connector", "Connctr"),
+                           str_detect(road.col, " Lane") ~ str_replace(road.col, "Lane", "Ln"),
+                           str_detect(road.col, " Terrace") ~ str_replace(road.col, "Terrace", "Terr"),
+                           str_detect(road.col, " State Highway") ~ str_replace(road.col, "State Highway", "Hwy"), # this needs to go before Highway to Hwy
+                           str_detect(road.col, " Highway") ~ str_replace(road.col, "Highway", "Hwy"),
+                           str_detect(road.col, "State Route") ~ str_replace(road.col, "State Route", "Sr"),
+                           str_detect(road.col, " Circle") ~ str_replace(road.col, "Circle", "Cir"),
+                           TRUE ~ road.col)
+}
+
+
+
+
 # combines continuous segments of road into single object ----
 #' combine_continuous
 #' combines continuous segments of road into single object
