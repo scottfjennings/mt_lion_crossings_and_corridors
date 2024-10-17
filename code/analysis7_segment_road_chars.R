@@ -298,15 +298,31 @@ saveRDS(puma_ok_bridges_per_seg, here("data/puma_ok_bridges_per_seg"))
 
 # want some variable to represent traffic conditions ----
 # number of lanes and speed limit data mostly incomplete so not using
+# road class may be a crude proxy for traffic conditions, but the st_intersection below isn't working as expected(not returning enough segments)
+# skipping traffic conditions for TWS/Mt Lion working group presentation
 
-
+# this has the road class for each original segment
 napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm")) %>% 
-  select(-pubpriv)
+  select(label.city, label, class)
 
+orig_seg_class <- napa_sonoma_rds_utm %>% 
+  data.frame() %>% 
+  select(-geometry) %>% 
+  distinct(label.city, label, class) %>% 
+  group_by(label.city, label) %>% 
+  mutate(num.class = n()) %>% 
+  ungroup()
 
-equal_length_chars <- st_intersection(napa_sonoma_rds_equal_segs, napa_sonoma_rds_utm) %>% 
+# need to assign road class to each equal length segment
+equal_length_seg_class_st <- st_intersection(napa_sonoma_rds_utm, napa_sonoma_rds_equal_segs) %>% 
   filter(st_is(., c("MULTILINESTRING", "LINESTRING")) ) 
 
+equal_length_seg_class <- left_join(napa_sonoma_rds_equal_segs %>% 
+                                      data.frame() %>% 
+                                      select(-geometry),
+                                    )
+
+st_write(equal_length_seg_class, here("data/equal_length_seg_class.shp"), append = FALSE)
 
 
 equal_length_chars_summarized <- equal_length_chars %>% 
