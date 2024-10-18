@@ -10,13 +10,15 @@ library(sf)
 options(scipen = 999)
 
 source(here("code/utilities.R"))
+source(here("code/helper_data.R"))
 
 # read data ----
 # steps
 puma_steps <- readRDS(here("data/puma_steps")) 
 
 # number of lions 
-distinct(puma_steps, animal.id) %>% nrow()
+distinct(puma_steps, animal.id) %>% 
+  filter(!animal.id %in% exclude_pumas, !animal.id %in% hr_exclude_pumas) %>% nrow()
 
 # date range
 min(puma_steps$datetime.local)
