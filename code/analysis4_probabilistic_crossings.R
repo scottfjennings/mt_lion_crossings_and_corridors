@@ -53,9 +53,6 @@ naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr"))
 
 crossing_steps <- names(all_clusters_bbmm)
 
-step_df <- data.frame(crossing.step = crossing_steps) %>% 
-  distinct(crossing.step)
-
 # crossing_steps = crossing_steps[crossing_steps != "P13_29892_23626"] # this one is only 1 raster cell tall and causes problems
 
 # road layer in UTM
@@ -128,6 +125,8 @@ system.time(
 # ~ 20 sec; 34
 names(all_bbmm_ud) <- names(all_clusters_bbmm)
 saveRDS(all_bbmm_ud, here("model_objects/all_bbmm_ud_1step"))
+
+all_bbmm_ud <- readRDS(here("model_objects/all_bbmm_ud_1step"))
 
 # 2. create a raster for each UD. creates all_ud_rast ---- 
 #' UD_to_raster
@@ -261,13 +260,16 @@ get_bbmm_crossed_equal_seg <- function(zcrossing.step) {
   
   crossed_bbmm_road_slice <- bbmm_crossed_intersection_seg[[zcrossing.step]]
   
-  crossed_bbmm_equal_length <- st_intersection(napa_sonoma_rds_equal_segs, crossed_bbmm_road_slice) %>% 
+  crossed_bbmm_equal_length <- st_intersection(napa_sonoma_rds_equal_segs, crossed_bbmm_road_slice) %>%
+    filter(!st_is(., c("POINT", "MULTIPOINT"))) %>% 
     #st_collection_extract("LINESTRING") %>% 
-    select(-contains("label.city."))
+    select(-contains("label.city.")) %>% 
+    distinct()
   return(crossed_bbmm_equal_length)
 }
 
-#xx <- get_bbmm_crossed_equal_seg(zcrossing.step)
+# xx <- get_bbmm_crossed_equal_seg("P1_37472_11769")
+
 system.time(
   bbmm_crossed_equal_seg_safe <- map(crossing_steps, safely(get_bbmm_crossed_equal_seg)), gcFirst = TRUE
 ) # 152
@@ -292,6 +294,7 @@ bbmm_crossed_equal_seg_df %>%
   
 xx <- get_bbmm_crossed_equal_seg("P13_29892_28129")
 
+# get_all_bbmm_roads ----
 #' get_all_bbmm_roads
 #' 
 #' get all roads that are within the 90% UD for a step 
@@ -359,6 +362,15 @@ num_objects <- full_join(map_df(all_bbmm_roads, nrow) %>%
   mutate(diff.obj = all_bbmm_roads - crossed_bbmm_roads)
 
 
+all_ud_rast <- readRDS(here("model_objects/all_ud_rast_1step"))
+napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm"))
+all_ud_trim_to_step <- readRDS(here("model_objects/all_ud_trim_to_step_1step"))
+all_bbmm_roads <- readRDS(here("model_objects/all_bbmm_roads_1step"))
+crossing_clusters_gps <- readRDS(here("data/crossing_clusters_gps"))
+bbmm_crossed_intersection_seg <- readRDS(here("data/bbmm_crossed_intersection_seg"))
+bbmm_crossed_equal_seg <- readRDS(here("data/bbmm_crossed_equal_seg"))
+
+
 #' prob_road_crossing_plotter
 #'
 #' test plot of probabilistic road crossings
@@ -378,7 +390,7 @@ prob_road_crossing_plotter <- function(zcrossing.step) {
   
   # clip the road layer to cut down computing time for the main st_intersection below
   road_slicer <- st_bbox(rp)  %>% st_as_sfc()
-  road_slice <- st_intersection(road_layer, road_slicer)
+  road_slice <- st_intersection(napa_sonoma_rds_equal_segs, road_slicer)
   
   ggplot2::ggplot() +
     geom_sf(data = all_ud_rast[[zcrossing.step]]) +
@@ -397,7 +409,7 @@ prob_road_crossing_plotter <- function(zcrossing.step) {
     coord_sf(datum = st_crs(26910))
 }
 
-
+zcrossing.step = "P1_37472_11769"
 
 # these have split UD with crossed roads going through the gaps
 bad_ud_steps <- c("P13_29892_26815", "P16_37473_47485", "P4_23163_122801")
