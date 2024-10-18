@@ -82,7 +82,7 @@ HR_UDS <- akde(analysis_table_tl,
                puma_fits)
 
 saveRDS(HR_UDS, here("model_objects/puma_hr_uds"))
-puma_hr_uds <- readRDS(here("model_objects/puma_hr_uds"))
+HR_UDS <- readRDS(here("model_objects/puma_hr_uds"))
 
 
 #Plot the data and HR estimates
@@ -118,7 +118,7 @@ ggplot() +
 }
 
 
-kitty_plotter("P1")
+kitty_plotter("P21")
 
 
 hr_exclude_pumas <- c("P36", #funky locations, in the ocean
