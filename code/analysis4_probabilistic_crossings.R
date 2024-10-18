@@ -30,9 +30,10 @@ crossing_clusters_gps <- readRDS(here("data/crossing_clusters_gps_1step")) %>%
 all_clusters_bbmm <- readRDS(here("model_objects/all_clusters_bbmm_1step"))
 #all_clusters_bbmm <- readRDS(here("model_objects/all_clusters3_bbmm"))
 
+# NO RUN - any errors on individual crossing steps are handled automatically now - 
 all_clusters_bbmm["P13_29892_23626"] <- NULL # this one is only 1 raster cell tall and causes problems
 
-# for the 1 step uds these steps also cause trouble
+# NO RUN - any errors on individual crossing steps are handled automatically now - for the 1 step uds these steps also cause trouble
 all_clusters_bbmm["P1_37472_11247"] <- NULL
 all_clusters_bbmm["P1_37472_11248"] <- NULL
 all_clusters_bbmm["P1_37472_14839"] <- NULL
@@ -51,6 +52,9 @@ naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr"))
 #  filter(crossing.step != "P13_29892_23626") # this one is only 1 raster cell tall and causes problems
 
 crossing_steps <- names(all_clusters_bbmm)
+
+step_df <- data.frame(crossing.step = crossing_steps) %>% 
+  distinct(crossing.step)
 
 # crossing_steps = crossing_steps[crossing_steps != "P13_29892_23626"] # this one is only 1 raster cell tall and causes problems
 
@@ -179,10 +183,11 @@ napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %
 # zcrossing.step = "P1_23163_2781"
 
 
-
-#' get_bbmm_crossed_intersection_seg
+# get_bbmm_crossed_intersection_seg ----
+#' get_bbmm_crossed_intersection_seg 
 #' 
-#' get road that is within the 90% UD and was crossed by the puma step
+#' get road that is within the 90% UD and was crossed by the puma step. this uses a road layer that is broken up into segments based on intersections. thus, the crossed road identified is just the naive crossing out to the first intersection in each direction along the road. This avoids iding road segments that would require more crossings than seems parsimonious
+#' 
 #'
 #' @param zcrossing.step character string indicating the ID for the cluster of points to evaluate
 #' @details 
@@ -238,9 +243,13 @@ bbmm_crossed_intersection_seg <- map(bbmm_crossed_intersection_seg_safe, "result
 
 saveRDS(bbmm_crossed_intersection_seg, here("data/bbmm_crossed_intersection_seg"))
 
+bbmm_crossed_intersection_seg <- readRDS(here("data/bbmm_crossed_intersection_seg"))
+
+
+# get_bbmm_crossed_equal_seg ----
 #' get_bbmm_crossed_equal_seg
 #' 
-#' get the equal length crossed segments in the BBMM UD
+#' get the equal length crossed segments in the BBMM UD. this uses bbmm_crossed_intersection_seg from above to only get the equal length segments that are between intersections where the naive crossing happened 
 #'
 #' @param zcrossing.step 
 #'
@@ -253,7 +262,7 @@ get_bbmm_crossed_equal_seg <- function(zcrossing.step) {
   crossed_bbmm_road_slice <- bbmm_crossed_intersection_seg[[zcrossing.step]]
   
   crossed_bbmm_equal_length <- st_intersection(napa_sonoma_rds_equal_segs, crossed_bbmm_road_slice) %>% 
-    st_collection_extract("LINESTRING") %>% 
+    #st_collection_extract("LINESTRING") %>% 
     select(-contains("label.city."))
   return(crossed_bbmm_equal_length)
 }
@@ -272,6 +281,16 @@ bbmm_crossed_equal_seg <- map(bbmm_crossed_equal_seg_safe, "result")[sapply(map(
 
 saveRDS(bbmm_crossed_equal_seg, here("data/bbmm_crossed_equal_seg"))
 
+
+bbmm_crossed_equal_seg <- readRDS(here("data/bbmm_crossed_equal_seg"))
+
+bbmm_crossed_equal_seg_df <- bbmm_crossed_equal_seg  %>% 
+  bind_rows(.id = "crossing.step") 
+
+bbmm_crossed_equal_seg_df %>% 
+  filter(crossing.step == "P13_29892_28129") %>% view()
+  
+xx <- get_bbmm_crossed_equal_seg("P13_29892_28129")
 
 #' get_all_bbmm_roads
 #' 
@@ -422,6 +441,8 @@ num_crossings <- naive_crossings %>%
   group_by(step.id) %>% 
   count()
 
+bbmm_crossed_equal_seg <- readRDS(here("data/bbmm_crossed_equal_seg")) %>% 
+  bind_rows()
 
 
 # funky movements
