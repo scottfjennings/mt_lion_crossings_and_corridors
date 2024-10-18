@@ -65,7 +65,7 @@ ud_hab_sum_wt_crossed_segs_longer <- all_hr_road_habitat %>%
   filter(!is.na(seg.label)) %>% 
   pivot_longer(cols = c("mean.dev", "mean.tre.shr"), names_to = "variable", values_to = "hab.value")
 
-puma_varbs <- ud_hab_wt_crossed_segs_longer %>% 
+puma_varbs <- ud_hab_sum_wt_crossed_segs_longer %>% 
   distinct(animal.id, variable)
 
 
@@ -108,8 +108,9 @@ fit_scale_mods <- function(zpuma, zvarb, zcross) {
   return(scale_aic)
 }
 
+system.time(
 hab_scale_aic <- pmap_df(list(puma_varbs_cross$animal.id, puma_varbs_cross$variable, puma_varbs_cross$which.cross), fit_scale_mods)
-
+) # 7 sec
 
 all_aic_viewer <- function(zvarb, zcross, zaic = Inf) {
 hab_scale_aic %>% 
@@ -119,7 +120,8 @@ hab_scale_aic %>%
          ) %>% 
   select(Modnames, Delta_AICc, animal.id) %>%
   arrange(Modnames, animal.id) %>% 
-  pivot_wider(id_cols = c(animal.id), names_from = Modnames, values_from = Delta_AICc)
+  pivot_wider(id_cols = c(animal.id), names_from = Modnames, values_from = Delta_AICc) %>% 
+    select(animal.id, mod30, mod60, mod90, mod120, mod150, mod180, mod210, mod240, mod270, mod300)
 }
 
 all_aic_summer <- function(zvarb, zcross) {
@@ -134,10 +136,10 @@ all_aic_summer <- function(zvarb, zcross) {
 # "mean.dev" and "tot.raw.cross"
 all_aic_viewer("mean.dev", "tot.raw.cross") %>% view()
 all_aic_summer("mean.dev", "tot.raw.cross")
-# mod60 is most best across all lions
+# mod300 is most best for mean.dev across all lions
 
 
-# "mean.dev" and "tot.raw.cross"
+# "mean.dev" and "tot.wt.cross"
 all_aic_viewer("mean.dev", "tot.wt.cross") %>% view()
 all_aic_summer("mean.dev", "tot.wt.cross")
 # mod60 is most best across all lions
@@ -145,7 +147,7 @@ all_aic_summer("mean.dev", "tot.wt.cross")
 # "mean.dev" and "tot.raw.cross"
 all_aic_viewer("mean.tre.shr", "tot.raw.cross") %>% view()
 all_aic_summer("mean.tre.shr", "tot.raw.cross")
-# mod30, mod60, and mod300 are most best across all lions but mod30 and mod60 very similar so only using mod30 and mod300
+# mod300 is most best across all lions but mod30 is good for a couple lions that mod300 isn't good for so using mod30 and mod300
 
 
 # "mean.dev" and "tot.raw.cross"
@@ -157,7 +159,7 @@ all_aic_summer("mean.tre.shr", "tot.wt.cross")
 
 # filter the best scales and save ----
 habitat_varbs_scales <- ud_hab_sum_wt_crossed_segs_longer %>% 
-  filter((variable == "mean.dev" & buff == 60) | (variable == "mean.tre.shr" & buff %in% c(30, 300))) %>% 
+  filter((variable == "mean.dev" & buff %in% c(60, 300)) | (variable == "mean.tre.shr" & buff %in% c(30, 300))) %>% 
   mutate(variable.buff = paste(str_replace(variable, "mean.", ""), buff, sep = ".")) %>% 
   pivot_wider(id_cols = c(animal.id, seg.label, year, tot.raw.cross, tot.wt.cross), names_from = variable.buff, values_from = hab.value)
 
