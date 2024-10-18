@@ -15,7 +15,8 @@ all_bbmm_road_slices <- readRDS(here("model_objects/crossed_bbmm_roads_1step")) 
 bbmm_crossed_equal_seg <- readRDS(here("data/bbmm_crossed_equal_seg")) %>% 
   bind_rows(., .id = "crossing.step") %>% 
   select(-X, -seg.length) %>% 
-  mutate(crossed.seg.length = st_length(geometry))
+  mutate(crossed.seg.length = st_length(geometry))  %>% 
+  mutate(animal.id = str_extract(crossing.step, "^[^_]+(?=_)"))
 
 
 napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
@@ -33,9 +34,8 @@ wt_road_crossed_segs <- bbmm_crossed_equal_seg %>%
                                  select(-geometry)) %>% 
   mutate(raw.crossing = 1,
          weighted.crossing = as.numeric(crossed.seg.length/road.seg.length)) %>% 
-  full_join(crossing_years) %>% 
-  arrange(label.city, seg.label)  %>% 
-  mutate(animal.id = str_extract(crossing.step, "^[^_]+(?=_)"))
+  left_join(crossing_years) %>% 
+  arrange(label.city, seg.label)
   
 saveRDS(wt_road_crossed_segs, here("data/wt_road_crossed_segs"))
 
