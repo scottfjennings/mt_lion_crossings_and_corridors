@@ -6,6 +6,7 @@ library(sf)
 options(scipen = 999)
 
 source(here("code/utilities.R"))
+source(here("code/helper_data.R"))
 
 
 all_bbmm_road_slices <- readRDS(here("model_objects/crossed_bbmm_roads_1step")) %>% 
@@ -35,7 +36,12 @@ wt_road_crossed_segs <- bbmm_crossed_equal_seg %>%
   mutate(raw.crossing = 1,
          weighted.crossing = as.numeric(crossed.seg.length/road.seg.length)) %>% 
   left_join(crossing_years) %>% 
-  arrange(label.city, seg.label)
+  arrange(label.city, seg.label) %>% 
+  filter(!animal.id %in% hr_exclude_pumas,
+         !seg.label %in% p31_exclude_segments,
+         !st_is(., c("POINT", "MULTIPOINT"))) %>%  # end up with some point objects, want only lines 
+  distinct() # and still somehow ending up with duplicates - still don't know where/how this is happening
+
   
 saveRDS(wt_road_crossed_segs, here("data/wt_road_crossed_segs"))
 
