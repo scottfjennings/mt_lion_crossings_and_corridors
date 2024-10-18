@@ -17,6 +17,7 @@ all_hr_road_habitat <- readRDS(here("data/all_hr_road_habitat")) %>%
          !seg.label %in% p31_exclude_segments)
 
 
+# couple plots to check data
 all_hr_road_habitat %>% 
   data.frame() %>% 
   select(year, seg.label, animal.id, buff, mean.tre.shr) %>% 
@@ -36,10 +37,9 @@ all_hr_road_habitat %>%
 # similar distance buffers have more similar values of mean.tre.shr and mean.dev, although this is stronger for mean.tre.shr 
 
 # read the BBMM weighted road segment crossing densities
-wt_road_crossed_segs <- readRDS(here("data/wt_road_crossed_segs")) %>% 
-  filter(!animal.id %in% hr_exclude_pumas,
-         !seg.label %in% p31_exclude_segments)
+wt_road_crossed_segs <- readRDS(here("data/wt_road_crossed_segs"))
 
+# some duplicates (e.g. crossing.step P1_37472_11769) seem to be coming from equal length segments being split into intersection segments, and both of the subsequent parts being included in bbmm_crossed_equal_seg
 
 # count the number of raw and weighted crossings per segment
 sum_wt_road_crossed_segs <- wt_road_crossed_segs %>% 
@@ -52,8 +52,9 @@ sum_wt_road_crossed_segs <- wt_road_crossed_segs %>%
   ungroup() 
 
 
+filter(wt_road_crossed_segs, crossing.step == "P1_37472_11769") %>% view()
 
-
+filter(wt_road_crossed_segs, seg.label == "Warm Springs Rd_Glen Ellen_4", year == 2021, animal.id == "P1") %>% data.frame() %>% count(crossing.step) %>% view()
 
 #
 # for summed crossings; selecting the best spatial scale for each predictor ----
@@ -136,7 +137,7 @@ all_aic_summer <- function(zvarb, zcross) {
 # "mean.dev" and "tot.raw.cross"
 all_aic_viewer("mean.dev", "tot.raw.cross") %>% view()
 all_aic_summer("mean.dev", "tot.raw.cross")
-# mod300 is most best for mean.dev across all lions
+# mod60 is most best for mean.dev across all lions
 
 
 # "mean.dev" and "tot.wt.cross"
@@ -153,13 +154,13 @@ all_aic_summer("mean.tre.shr", "tot.raw.cross")
 # "mean.dev" and "tot.raw.cross"
 all_aic_viewer("mean.tre.shr", "tot.wt.cross") %>% view()
 all_aic_summer("mean.tre.shr", "tot.wt.cross")
-# mod30 and mod300 are most best across all lions
+# No scale is very good across multiple lions. mod30 and mod300 are most best across all lions
 
 
 
 # filter the best scales and save ----
 habitat_varbs_scales <- ud_hab_sum_wt_crossed_segs_longer %>% 
-  filter((variable == "mean.dev" & buff %in% c(60, 300)) | (variable == "mean.tre.shr" & buff %in% c(30, 300))) %>% 
+  filter((variable == "mean.dev" & buff %in% c(60)) | (variable == "mean.tre.shr" & buff %in% c(30, 300))) %>% 
   mutate(variable.buff = paste(str_replace(variable, "mean.", ""), buff, sep = ".")) %>% 
   pivot_wider(id_cols = c(animal.id, seg.label, year, tot.raw.cross, tot.wt.cross), names_from = variable.buff, values_from = hab.value)
 
