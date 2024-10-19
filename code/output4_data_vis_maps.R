@@ -9,6 +9,8 @@ library(ggmap)
 source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/google_api_key.R")
 source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/stadiamaps_api_key.R")
 
+
+# crossings ----
 summed_crossing_analysis_table <- readRDS(here("data/habitat_varbs_scales"))
 
 
@@ -114,3 +116,65 @@ ggmap(p5_map)+
         plot.title = element_text(size=22))
 
 ggsave(here("figures/p5_2018_map.png"), dpi = 300)
+
+
+
+
+
+# study area map ----
+
+study_area_counties <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/study_area_counties") %>% 
+  st_transform(crs = 4326) %>% 
+  filter(NAME %in% c("Sonoma", "Napa"))
+
+study_area_map <- get_googlemap(center = c(lon = -122.8, lat = 38.365), zoom = 9, maptype = "terrain")
+
+ggmap(study_area_map)+
+#ggplot()+
+  geom_sf(data = study_area_counties, aes(color = NAME), inherit.aes = FALSE, fill = NA, linewidth = 2)+
+  scale_color_brewer(palette = "Set1") +
+  theme(axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        legend.title=element_text(size=18),
+        legend.text=element_text(size=14),
+        plot.title = element_text(size=22)) +
+  labs(color = "")
+ggsave(here("figures/study_area.png"), dpi = 300)
+
+
+
+# mortality locations ----
+
+study_area_counties <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/study_area_counties") %>% 
+  st_transform(crs = 4326) %>% 
+  filter(NAME %in% c("Sonoma", "Napa"))
+
+mort_map <- get_googlemap(center = c(lon = -122.8, lat = 38.365), zoom = 9, maptype = "roadmap")
+
+mortalities <- read.csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/North Bay Puma Roadkill Data.csv") %>% 
+  st_as_sf(x = .,
+           coords = c("long", "lat"),
+           crs = 4326) %>% 
+  filter(county %in% c("Sonoma", "Napa"))
+
+
+napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
+  bind_rows() %>% 
+  rename("road.seg.length" = seg.length)
+
+# ggmap(mort_map) +
+ggplot() +
+  geom_sf(data = study_area_counties, inherit.aes = FALSE, fill = NA) +
+  geom_sf(data = napa_sonoma_rds_equal_segs, inherit.aes = FALSE, alpha = 0.5) +
+  geom_sf(data = mortalities, aes(color = county), inherit.aes = FALSE, size = 4) +
+  scale_color_brewer(palette = "Set1") +
+  theme_bw() +
+  theme(axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        legend.position = c(.15,.2)) +
+  labs(color = "Roadkill\nlocations")
+
+ggsave(here("figures/roadkill_locations_map.png"), dpi = 300, width = 6, height = 5)
+
