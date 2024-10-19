@@ -5,6 +5,7 @@ library(tidyverse)
 library(here)
 library(lme4)
 library(AICcmodavg)
+library(MuMIn)
 library(readxl)
 #library(merTools)
 #library(sf)
@@ -210,6 +211,15 @@ system.time(
 wt_crossings_mods_puma$aic
 
 saveRDS(wt_crossings_mods_puma, here("model_objects/wt_crossings_mods_puma"))
+
+
+wt_crossings_mods_puma <- readRDS(here("model_objects/wt_crossings_mods_puma"))
+
+best_mod <- wt_crossings_mods_puma$dev60.sex.bridge
+
+
+r.squaredGLMM(best_mod)
+
 
 
 znewdat = expand.grid(sex = c("F", "M"),
