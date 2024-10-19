@@ -45,6 +45,18 @@ hr_uds <- readRDS(here("model_objects/puma_hr_uds"))
 
 
 # mask habitat to home range
+#' get_hr_road_habitat
+#' 
+#' extract habitat values from USDA RAP layers 
+#' this is the step where the roads get restricted to the home range of each mt lion
+#'
+#' @param zpuma 
+#' @param zyear 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 get_hr_road_habitat <- function(zpuma, zyear) {
   
   puma_hr_uds <- hr_uds[[zpuma]] %>% 
