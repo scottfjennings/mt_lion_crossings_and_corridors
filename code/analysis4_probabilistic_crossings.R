@@ -182,7 +182,7 @@ napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %
 # zcrossing.step = "P1_23163_2781"
 
 
-# get_bbmm_crossed_intersection_seg ----
+# 3a. get_bbmm_crossed_intersection_seg ----
 #' get_bbmm_crossed_intersection_seg 
 #' 
 #' get road that is within the 90% UD and was crossed by the puma step. this uses a road layer that is broken up into segments based on intersections. thus, the crossed road identified is just the naive crossing out to the first intersection in each direction along the road. This avoids iding road segments that would require more crossings than seems parsimonious
@@ -245,7 +245,7 @@ saveRDS(bbmm_crossed_intersection_seg, here("data/bbmm_crossed_intersection_seg"
 bbmm_crossed_intersection_seg <- readRDS(here("data/bbmm_crossed_intersection_seg"))
 
 
-# get_bbmm_crossed_equal_seg ----
+# 3b. get_bbmm_crossed_equal_seg ----
 #' get_bbmm_crossed_equal_seg
 #' 
 #' get the equal length crossed segments in the BBMM UD. this uses bbmm_crossed_intersection_seg from above to only get the equal length segments that are between intersections where the naive crossing happened 
@@ -289,12 +289,14 @@ bbmm_crossed_equal_seg <- readRDS(here("data/bbmm_crossed_equal_seg"))
 bbmm_crossed_equal_seg_df <- bbmm_crossed_equal_seg  %>% 
   bind_rows(.id = "crossing.step") 
 
+distinct(bbmm_crossed_equal_seg_df, crossing.step) %>% nrow()
+
 bbmm_crossed_equal_seg_df %>% 
   filter(crossing.step == "P13_29892_28129") %>% view()
   
 xx <- get_bbmm_crossed_equal_seg("P13_29892_28129")
 
-# get_all_bbmm_roads ----
+# 3c. get_all_bbmm_roads ----
 #' get_all_bbmm_roads
 #' 
 #' get all roads that are within the 90% UD for a step 
@@ -410,6 +412,12 @@ prob_road_crossing_plotter <- function(zcrossing.step) {
 }
 
 zcrossing.step = "P1_37472_11769"
+
+
+prob_road_crossing_plotter("P13_90388_40608") + 
+  guides(colour=FALSE) +
+  labs(title = "")
+ggsave(here("figures/bbmm_example.png"))
 
 # these have split UD with crossed roads going through the gaps
 bad_ud_steps <- c("P13_29892_26815", "P16_37473_47485", "P4_23163_122801")
