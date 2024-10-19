@@ -81,3 +81,4 @@ saveRDS(naive_crossings, here("data/naive_crossings_napa_sonoma_2hr"))
 
 naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr"))
 
+
