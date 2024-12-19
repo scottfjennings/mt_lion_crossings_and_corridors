@@ -1,5 +1,20 @@
 
 
+#' animal.id_from_crossing.step
+#' 
+#' extract animal.id from the crossing step id. extracts all characters before the first underscore
+#'
+#' @param df data frame with a column called crossing.step, with the format animal.id_collar.id_step.id. 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+animal.id_from_crossing.step <- function(df) {
+  df <- df %>% 
+    mutate(animal.id = str_extract(crossing.step, "^[^_]+(?=_)"))
+}
+
 
 
 #' abbreviate_roads
