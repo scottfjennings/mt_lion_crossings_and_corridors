@@ -31,17 +31,17 @@ all_clusters_bbmm <- readRDS(here("model_objects/all_clusters_bbmm_1step"))
 #all_clusters_bbmm <- readRDS(here("model_objects/all_clusters3_bbmm"))
 
 # NO RUN - any errors on individual crossing steps are handled automatically now - 
-all_clusters_bbmm["P13_29892_23626"] <- NULL # this one is only 1 raster cell tall and causes problems
+#all_clusters_bbmm["P13_29892_23626"] <- NULL # this one is only 1 raster cell tall and causes problems
 
 # NO RUN - any errors on individual crossing steps are handled automatically now - for the 1 step uds these steps also cause trouble
-all_clusters_bbmm["P1_37472_11247"] <- NULL
-all_clusters_bbmm["P1_37472_11248"] <- NULL
-all_clusters_bbmm["P1_37472_14839"] <- NULL
-all_clusters_bbmm["P1_37472_15955"] <- NULL
-all_clusters_bbmm["P2_9323_60474"] <- NULL
-all_clusters_bbmm["P33_40855_86744"] <- NULL
-all_clusters_bbmm["P41_44132_132816"] <- NULL
-all_clusters_bbmm["P41_44132_132817"] <- NULL
+#all_clusters_bbmm["P1_37472_11247"] <- NULL
+#all_clusters_bbmm["P1_37472_11248"] <- NULL
+#all_clusters_bbmm["P1_37472_14839"] <- NULL
+#all_clusters_bbmm["P1_37472_15955"] <- NULL
+#all_clusters_bbmm["P2_9323_60474"] <- NULL
+#all_clusters_bbmm["P33_40855_86744"] <- NULL
+#all_clusters_bbmm["P41_44132_132816"] <- NULL
+#all_clusters_bbmm["P41_44132_132817"] <- NULL
 
 # need this to extract the road segments that were crossed
 # road_crossing_steps$geometry is the geometry of the road segment that is crossed by the direct line of the step, not the geometry of the step itself
@@ -167,6 +167,7 @@ all_ud_rast <- map(all_ud_rast_safe, "result")[sapply(map(all_ud_rast_safe, "err
 saveRDS(all_ud_rast, here("model_objects/all_ud_rast_1step"))
 
 
+all_ud_rast <- readRDS(here("model_objects/all_ud_rast_1step"))
 
 
 
@@ -368,7 +369,7 @@ all_ud_rast <- readRDS(here("model_objects/all_ud_rast_1step"))
 napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm"))
 all_ud_trim_to_step <- readRDS(here("model_objects/all_ud_trim_to_step_1step"))
 all_bbmm_roads <- readRDS(here("model_objects/all_bbmm_roads_1step"))
-crossing_clusters_gps <- readRDS(here("data/crossing_clusters_gps"))
+crossing_clusters_gps <- readRDS(here("data/crossing_clusters_gps_1step"))
 bbmm_crossed_intersection_seg <- readRDS(here("data/bbmm_crossed_intersection_seg"))
 bbmm_crossed_equal_seg <- readRDS(here("data/bbmm_crossed_equal_seg"))
 
@@ -394,15 +395,21 @@ prob_road_crossing_plotter <- function(zcrossing.step) {
   road_slicer <- st_bbox(rp)  %>% st_as_sfc()
   road_slice <- st_intersection(napa_sonoma_rds_equal_segs, road_slicer)
   
+  crossed_rds <- bbmm_crossed_equal_seg[[zcrossing.step]] %>% 
+    distinct(seg.label)
+  
   ggplot2::ggplot() +
-    geom_sf(data = all_ud_rast[[zcrossing.step]]) +
+    geom_sf(data = all_ud_rast[[zcrossing.step]], fill = "gray", color = NA) +
     geom_sf(data = road_slice, color = "gray20") +
-    geom_sf(data = all_bbmm_roads[[zcrossing.step]], aes(color = seg.label), alpha = 0.5)  +
-    geom_sf(data = bbmm_crossed_intersection_seg[[zcrossing.step]] %>% st_as_sf(), aes(color = label.city.2), linewidth = 4, alpha = 0.5) +
-    geom_sf(data = bbmm_crossed_equal_seg[[zcrossing.step]] %>% st_as_sf(), aes(color = seg.label), linewidth = 2) +
-    geom_path(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
-    geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing)) +
-    geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step, (step.id == zcrossing.step | lag(step.id) == zcrossing.step)), aes(x = easting, y = northing, color = step.id), size = 4) +
+    #geom_sf(data = filter(road_slice, seg.label %in% crossed_rds$seg.label), aes(color = seg.label), linewidth = 1) +
+    #geom_sf(data = all_bbmm_roads[[zcrossing.step]], aes(color = seg.label), alpha = 0.5)  +
+    #geom_sf(data = bbmm_crossed_intersection_seg[[zcrossing.step]] %>% st_as_sf(), aes(color = label.city.2), linewidth = 4, alpha = 0.5) +
+#    geom_sf(data = bbmm_crossed_equal_seg[[zcrossing.step]] %>% st_as_sf(), aes(color = seg.label), linewidth = 3) +
+    geom_sf(data = bbmm_crossed_equal_seg[[zcrossing.step]] %>% st_as_sf(), color = "red", linewidth = 2) +
+    geom_path(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing), color = "#377EB8", linewidth = 1) +
+    geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing), color = "#377EB8") +
+#    geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step, (step.id == zcrossing.step | lag(step.id) == zcrossing.step)), aes(x = easting, y = northing, color = step.id), size = 4) +
+    scale_color_brewer(palette = "Dark2") +
     labs(title = zcrossing.step,
          x = "",
          y = "",
@@ -411,13 +418,16 @@ prob_road_crossing_plotter <- function(zcrossing.step) {
     coord_sf(datum = st_crs(26910))
 }
 
-zcrossing.step = "P1_37472_11769"
+zcrossing.step = "P13_90388_40608"
 
 
-prob_road_crossing_plotter("P13_90388_40608") + 
+prob_road_crossing_plotter("P13_90388_40336") + 
   guides(colour=FALSE) +
-  labs(title = "")
-ggsave(here("figures/bbmm_example.png"))
+  labs(title = "") +
+  theme(axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank())
+ggsave(here("figures/bbmm_example2a.png"))
 
 # these have split UD with crossed roads going through the gaps
 bad_ud_steps <- c("P13_29892_26815", "P16_37473_47485", "P4_23163_122801")
@@ -426,6 +436,8 @@ prob_road_crossing_plotter(bad_ud_steps[1])
 
 prob_road_crossing_plotter("P13_37473_38760")
 prob_road_crossing_plotter("P1_11082_9")
+
+prob_road_crossing_plotter(crossing_steps[[5]])
 
 # example tricky crossings
 # prob_road_crossing_plotter("P1_37472_11128")
@@ -453,6 +465,10 @@ ggsave(here("figures/test_ud_crossings/P16_37473_47255_1step.png"))
 # as of 10/11/24 this new method generally seems to do a good job of getting the right looking road
 # but naive steps that cross multiple roads are still a problem
 # will probably filter those out for now, for TWS and CADFW mt lion working group meeting
+
+# e.g. of probably no actual crossing:
+# P1_23163_2264
+
 
 num_crossings <- naive_crossings %>% 
   data.frame() %>% 
