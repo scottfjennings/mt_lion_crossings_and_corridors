@@ -224,7 +224,7 @@ r.squaredGLMM(best_mod)
 
 znewdat = expand.grid(sex = c("F", "M"),
                       dev.60 = seq(0, 1, by = 0.1),
-                      num.bridge = seq(0, max(summed_crossing_analysis_table$num.bridge))
+                      num.bridge = seq(0, 3)
                       #, animal.id = distinct(summed_crossing_analysis_table_long, animal.id)$animal.id
                       ) 
 
@@ -250,7 +250,7 @@ zpred_wt %>%
   guides(colour = guide_legend(reverse=T),
          fill = guide_legend(reverse=T))
 
-ggsave(here("figures/wt_mod_plot.png"), width = 7, height = 5)
+ggsave(here("figures/wt_mod_plot_3bridge.png"), width = 7, height = 5)
 
 # fit with weighted crossings as response
 wt_crossings_mods <- fit_summed_crossing_mods("tot.wt.cross")
