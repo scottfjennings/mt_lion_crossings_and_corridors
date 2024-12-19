@@ -30,3 +30,6 @@ hr_exclude_pumas <- c("P36", #funky locations, in the ocean
 
 
 p31_exclude_segments <- c("Hwy 1_16", "Hwy 1_17", "Hwy 1_18", "Hwy 1_19", "Hwy 1_20", "Hwy 1_21", "Hwy 1_22", "Hwy 1_23")
+
+
+analysis_pumas <- c("P1", "P11", "P12", "P13", "P16", "P2", "P24", "P25", "P26", "P31", "P33", "P34", "P39", "P4", "P41", "P44", "P5", "P6", "P9")
