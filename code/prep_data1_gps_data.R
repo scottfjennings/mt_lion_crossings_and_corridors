@@ -6,8 +6,10 @@ library(tidyverse)
 library(here)
 library(sf)
 
-
+# this is needed for puma_proximity()
 source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/code/mountain_lion_utilities.R")
+
+# this is needed for exclude_pumas
 source(here("code/helper_data.R"))
 
 
@@ -76,7 +78,8 @@ pre_analysis_table <- right_join(deployments, analysis_dates) %>%
   select(animal.id, collar.id, datetime.local, date.local, collar.start, collar.end, latitude, longitude, altitude, dop, fix.type, sex, collar, age, new.start, new.end) %>% 
   mutate(keep.row = between(datetime.local, new.start, new.end))
 
-saveRDS(pre_analysis_table, here("data/pre_analysis_table"))
+# saveRDS(pre_analysis_table, here("data/pre_analysis_table"))
+# don't think there's any reason to save this
 
 # initially and arbitrarily used dop < 5 while getting the code to run, then switched to dop < 10 following 
 # McClure, M. L., B. G. Dickson, and K. L. Nicholson. 2017. Modeling connectivity to identify current and future anthropogenic barriers to movement of large carnivores: A case study in the American Southwest. Ecology and Evolution 7:3762–3772.
@@ -85,8 +88,8 @@ saveRDS(pre_analysis_table, here("data/pre_analysis_table"))
 # D’eon and Delparte found that eliminating 2D fixes improved accuracy similar to only using dop < 10, but that it eliminated 7.7% of the data whereas using dop < 10 eliminated only 1.3% of their data. In our dataset, filtering dop > 10 | fix.type %in% c("2D", "No Fix") causes a 2.1% data loss, which we feel is acceptable so we filtered based on both dop < 10 and fix type = 3D 
 
 
-#analysis_table <- pre_analysis_table %>% 
-analysis_table <- readRDS(here("data/pre_analysis_table")) %>% 
+analysis_table <- pre_analysis_table %>% 
+#analysis_table <- readRDS(here("data/pre_analysis_table")) %>% 
   filter(keep.row == TRUE, dop < 10, str_detect(fix.type, "3D")) %>% 
   select(animal.id, collar.id, datetime.local, date.local, latitude, longitude, altitude, dop, sex, collar, age)
 
@@ -98,25 +101,8 @@ saveRDS(analysis_table, here("data/analysis_table"))
 # load lion GPS data and convert to steps ----
 analysis_table <- readRDS(here("data/analysis_table"))
 #
-# NO RUN using amt to separate steps ----
-puma_track <- analysis_table %>% 
-  mutate(animal.collar = paste(animal.id, collar.id, sep = "_")) %>% 
-  make_track(longitude, latitude, datetime.local, crs = 4326, id = animal.collar)
-
-puma_track_utm <- transform_coords(puma_track, 26910)
-
-puma_steps <- nest(puma_track_utm, data = -"id") %>%  
-  mutate(steps = map(data, function(x) 
-    x |> #track_resample(rate = minutes(120), tolerance = minutes(120)) |> 
-      steps_by_burst()))
-
-puma_steps_df <- puma_steps |> 
-  select(id, steps) |> 
-  unnest(cols = steps) %>% 
-  mutate(id = paste(id, seq(1, nrow(.)), sep = "_"))
-
-
 # simpler way of creating steps, this doesn't resample so we keep all steps ----
+# need to convert to sf object so can change lat/lon to UTM
 puma_gps_utm <- analysis_table %>% 
   select(animal.id, collar.id, longitude, latitude, datetime.local) %>% 
   st_as_sf(x = .,
@@ -126,6 +112,7 @@ puma_gps_utm <- analysis_table %>%
   mutate(easting = st_coordinates(.)[,1],
          northing = st_coordinates(.)[,2]) 
 
+# then converting fixes to steps
 puma_steps <- puma_gps_utm %>% 
   data.frame() %>% 
   arrange(animal.id, datetime.local) %>% 
