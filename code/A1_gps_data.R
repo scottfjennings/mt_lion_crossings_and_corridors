@@ -38,7 +38,8 @@ end.buffer = -2
 
 
 # read data prepared in  C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/code/clean_raw_download.R
-deployments <- read_csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/lion_deployments.csv")
+deployments <- read_csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/lion_deployments.csv") %>% 
+  mutate(animal.id = ifelse(animal.id == "P5*", "P5", animal.id))
 
 collars <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/cleaned_collars") 
 
