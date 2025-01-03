@@ -1,4 +1,16 @@
-# Load the package and the buffalo tracking dataset
+# this data prep step is needed just to create some "generous" home range boundaries 
+# there isn't really much inference dependent on these home range boundaries, this is just to filter habitat laters, bridge objects, etc
+
+# this follows the basic workflow to calculate home ranges provided in the script C:\Users\scott.jennings\OneDrive - Audubon Canyon Ranch\R_examples_resources\workshop_content\workshop_2020_tws_ctmm\Scripts/Overlap_CDE from the 2020 ctmm workshop from the TWS conference (remote that year)
+
+
+# this requires:
+# "data/analysis_table" created by prep_data1_gps_data.R
+
+# this creates:
+# "model_objects/puma_fits"
+# "model_objects/puma_hr_uds"
+
 library(ctmm)
 library(tidyverse)
 library(here)
@@ -90,7 +102,7 @@ plot(analysis_table_tl[["P19"]],
      UD=HR_UDS[["P19"]],
      level.UD = 0.999)
 
-
+# just helpers to visually check home ranges below here
 
 study_area_counties <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/study_area_counties")  %>% 
   filter(NAME %in% c("Napa", "Sonoma")) %>% 

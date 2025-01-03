@@ -123,7 +123,7 @@ all_bridges_dups <- all_bridges  %>%
 # checking the distance between objects with the same FAC and NAME allows IDing possible/likely objects that represent the same actual bridge.
 #' get_close_dup_bridges
 #' 
-#' ID pairs of bridge objects that have the same FAC and NAME and are within some distance of each other, default 25 m. this uses all_bridges_dups to save computing time by only considering the cases where different points have the same FAC and NAME. use this to ID pairs of points that represent the same bridge.
+#' ID pairs of bridge objects that have the same FAC and NAME and are within some distance of each other, default 25 m. this uses all_bridges_dups to save computing time by only considering the cases where different points have the same FAC and NAME. use this to ID pairs of points that may represent the same bridge.
 #'
 #' @param zfac.name concatenation of FAC and NAME 
 #' @param too.close.dist the threshold distance that is used to fuzzy ID the same actual bridge
@@ -167,7 +167,7 @@ system.time(
 
 # using the output from get_close_dup_bridges
 # remove duplicate bridges that are from the Harvard db and within 25 m of a non-Harvard db bridge with the same FAC and NAME
-all_bridges_no_dup <- full_join(all_bridges, close_dup_bridges) %>% 
+all_bridges_no_close_dup <- full_join(all_bridges, close_dup_bridges) %>% 
   group_by(fac.name) %>%
   mutate(drop.dup = ifelse(any(bridge.source != "harvard") & too.close == TRUE & bridge.source == "harvard", TRUE, FALSE),
          drop.dup = replace_na(drop.dup, FALSE)) %>% 
@@ -179,23 +179,24 @@ all_bridges_no_dup <- full_join(all_bridges, close_dup_bridges) %>%
 # save shapefiles of intermediate steps for checking work in ArcGIS
 st_write(all_bridges, "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/napa_sonoma_bridges/napa_sonoma_bridges.shp", append = FALSE)
 
-st_write(all_bridges_no_dup, "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/napa_sonoma_bridges/napa_sonoma_bridges_no_dup.shp", append = FALSE)
+st_write(all_bridges_no_close_dup, "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/napa_sonoma_bridges/napa_sonoma_bridges_no_close_dup.shp", append = FALSE)
 
 ##################
 # bridges step 4. joint bridges with equal length road segments ----
 # the bridge points often don't fall right on the road lines, so need to buffer each road segment by 10m then find all the bridge objects that fall within that buffer zone.
+# this step doesn't necessarily need the equal length road segments, at this stage we just need the road names so could use any road layer. But joining with equal length here saves another joining step later.
 rds_buff10 <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
   bind_rows() %>% 
   rename("road.seg.length" = seg.length)%>% 
   st_buffer(., 10, endCapStyle = "FLAT")
 
-road_bridges <- st_intersection(rds_buff10, all_bridges_no_dup)
+road_bridges <- st_intersection(rds_buff10, all_bridges_no_close_dup)
 
 
 
 ##################
 # bridges step 5. check whether the road name from the bridge layer matches the road name in the equal length segment layer ----
-# because I used the 10m buffer in the previous step, some bridges near intersections or close roads might have been assigned to the wrong road.
+# because I used the 10m buffer in the previous step, some bridges near intersections or close to other roads might have been assigned to the wrong road.
 # also, the equal length segment layer now has road names specific to each equal length segment, so need to use partial matching instead of == to assign correct.road
 
 road_bridges <- road_bridges %>% 
@@ -271,7 +272,7 @@ row.names(home_range_bridges) <- NULL
 
 
 # save as a shapefile for the manual check step in ArcGIS Pro
-st_write(hr_bridges, "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/napa_sonoma_bridges/clean_bridges.shp", append = FALSE)
+st_write(home_range_bridges, "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/napa_sonoma_bridges/home_range_bridges.shp", append = FALSE)
 
 # bridges step 8. manual check each bridge to make sure they seem appropriate for mt lion crossing. ----
 # read this into GIS and 
@@ -285,13 +286,16 @@ st_write(hr_bridges, "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Pr
 # exclude_bridges2.csv is the set of manually excluded bridges selected once local roads were included
 # I'm not totally sure where exclude_bridges_hillside_shv.csv came from. doesn't seem to be code-generated so maybe I made it in AcrGIS, probably by doing a select by attribute then copying all those attribute table records to the csv. its only 34 objects
 
+
+# step 9. remove manually flagged "bad" bridge items ----
+# I ended up with 3 different .csv files with bad bridges, first step is combine them
 exclude_bridges <- bind_rows(read.csv(here("data/exclude_bridges.csv")) %>% dplyr::select(dup_lbl),  
                              read.csv(here("data/exclude_bridges2.csv")) %>% dplyr::select(dup_lbl),  
                              read.csv(here("data/exclude_bridges_hillside_shv.csv")) %>% dplyr::select(dup_lbl)) %>% 
   distinct()
 
 # write shapefile to check in AcrGIS
-clean_hr_bridges_unique %>% 
+home_range_bridges %>% 
   filter(dup.label %in% exclude_bridges$dup_lbl) %>% 
   st_write("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/napa_sonoma_bridges/exclude_bridges.shp", append = FALSE)
 
