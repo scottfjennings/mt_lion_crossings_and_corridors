@@ -1,4 +1,22 @@
 
+# basic initial cleaning of mountain lion GPS collar data
+# 1. exclude initial data when P2, P6, and P19 were dependent with P1 based on their proximity to each other  
+# 2. filter for higher accuracy GPS points
+# 3. convert fixes to steps
+
+
+# this requires:
+# "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/lion_deployments.csv"
+# "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/cleaned_collars"
+
+# this creates:
+# "data/p1_family_proximity.csv" - distances between P1 and her kittens
+# "data/analysis_table" - the cleaned fixes with the dependent P2, P6, and P19 data filtered out
+# "data/puma_steps" - the cleaned fixes converted to steps
+
+# this optionally creates
+# "figures/p1_family_proximity.png" - figure of distances between P1 and her kittens
+# "data/pre_analysis_table" - uncleaned fixes with the dependent P2, P6, and P19 data filtered out
 
 
 
@@ -56,7 +74,7 @@ p1_family_proximity %>%
        color = "Kitten ID") +
   facet_wrap(~cat2.id, nrow = 3, scales = "free")
 
-ggsave(here("figures/p1_family_proximity.png"), width = 10)
+# ggsave(here("figures/p1_family_proximity.png"), width = 10)
 
 # there seems to be a clear dependent/independent signal when the weekly average distance goes above 1 km (checking with Quinton about this as of 3/13/24)
 
