@@ -22,7 +22,6 @@ library(lubridate)
 # load and prep data ----
 
 analysis_table <- readRDS(here("data/analysis_table")) %>% 
-  mutate(animal.id = ifelse(animal.id == "P5*", "P5", animal.id)) %>% 
   dplyr::select(individual.local.identifier = animal.id, timestamp = datetime.local, location.long = longitude,
                 location.lat = latitude) %>% 
   arrange(individual.local.identifier, timestamp) %>% 
@@ -97,12 +96,12 @@ saveRDS(HR_UDS, here("model_objects/puma_hr_uds"))
 HR_UDS <- readRDS(here("model_objects/puma_hr_uds"))
 
 
+# just helpers to visually check home ranges below here
 #Plot the data and HR estimates
 plot(analysis_table_tl[["P19"]],
      UD=HR_UDS[["P19"]],
      level.UD = 0.999)
 
-# just helpers to visually check home ranges below here
 
 study_area_counties <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/study_area_counties")  %>% 
   filter(NAME %in% c("Napa", "Sonoma")) %>% 
