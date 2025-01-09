@@ -33,3 +33,8 @@ p31_exclude_segments <- c("Hwy 1_16", "Hwy 1_17", "Hwy 1_18", "Hwy 1_19", "Hwy 1
 
 
 analysis_pumas <- c("P1", "P11", "P12", "P13", "P16", "P2", "P24", "P25", "P26", "P31", "P33", "P34", "P39", "P4", "P41", "P44", "P5", "P6", "P9")
+
+
+# from Harvey, J. A., Q. Martins, and J. F. Benson. 2024. Impact of Sublethal Injuries on Mountain Lion Predation and Spatial Ecology. Canadian Wildlife Biology & Management 13.
+puma_injuries <- data.frame(puma = c("P1", "P4"),
+                            injury.date = c("2022-01-01", "2022-09-01"))
