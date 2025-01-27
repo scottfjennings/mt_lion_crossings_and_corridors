@@ -302,9 +302,12 @@ st_write(multiple_roads_to_check, "data/shapefiles/multiple_roads_to_check.shp",
 
 # with all multiple roads resolved, the road layer should be clean. 
 # data/shapefiles/napa_sonoma_rds_fil_Dissolve.shp is the object to move forward for subsequent analysis steps
-# resaving with a meaningful name
+# removing fields CONCATENAT and Shape_Leng, resaving with a meaningful name
 
-st_write(napa_sonoma_rds_filtered_Dissolve, here("data/shapefiles/final_cleaned_road_layer.shp"))
+final_cleaned_road_layer <- napa_sonoma_rds_filtered_Dissolve %>% 
+  select(-CONCATENAT, -Shape_Leng)
 
-saveRDS(napa_sonoma_rds_filtered_Dissolve, here("data/final_cleaned_road_layer"))
+st_write(final_cleaned_road_layer, here("data/shapefiles/final_cleaned_road_layer.shp"), append = FALSE)
+
+saveRDS(final_cleaned_road_layer, here("data/final_cleaned_road_layer"))
 
