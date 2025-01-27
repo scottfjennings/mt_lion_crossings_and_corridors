@@ -20,11 +20,10 @@ puma_steps <- readRDS(here("data/puma_steps")) %>%
 # road layer in UTM
 #napa_sonoma_rds_utm <- readRDS(here("data/napa_sonoma_rds_utm"))
 
-# as of Oct 2024 using the equal length segment road layer from prep_data3_equal_length_road_segments.R
-napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
-  bind_rows(.id = "label") %>% 
-  st_as_sf() %>% 
-  st_transform(crs = 26910)
+# as of Jan 2025 using the merged road layer from A3_road_layers.R
+final_cleaned_road_layer <- readRDS(here("data/final_cleaned_road_layer")) %>% 
+  st_transform(crs = 26910) %>%  # to UTM 10N
+  mutate(road.label = paste(label, leftcity, city.road.num, sep = "_"))
 
 
 
@@ -48,20 +47,20 @@ sp_step <- bind_rows(step %>%
 step_line <- sp_step %>%
   st_as_sf(coords = c("easting", "northing"), crs = 26910) %>%
   group_by(step.id) %>%
-  dplyr::summarize(do_union=FALSE) %>%  # do_union=FALSE doesn't work as well
+  dplyr::summarize(do_union=FALSE) %>% 
   st_cast("LINESTRING") 
 
 road_slicer <- st_bbox(step_line)  %>% st_as_sfc()
 
-road_slice <- st_intersection(napa_sonoma_rds_equal_segs, road_slicer)
+road_slice <- st_intersection(final_cleaned_road_layer, road_slicer)
 
 #rd_cross <- st_intersection(step_line, road_slice) 
 
 rd_cross <- st_intersects(step_line, road_slice) 
 out_rd_cross <- road_slice[unlist(rd_cross),] 
 
-out_crossed_roads <- napa_sonoma_rds_equal_segs %>% 
-  filter(seg.label %in% out_rd_cross$seg.label) %>% 
+out_crossed_roads <- final_cleaned_road_layer %>% 
+  filter(road.label %in% out_rd_cross$road.label) %>% 
   mutate(step.id = zstep)
   
   }
