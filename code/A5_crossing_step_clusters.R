@@ -17,8 +17,11 @@ naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr"))
 
 puma_steps <- readRDS(here("data/puma_steps")) %>% 
   mutate(step.dist.2hr = (step.dist/as.numeric(step.dur)) * 7200)
-# crossing_steps <- readRDS(here("data/crossing_step_ids"))
-crossing_steps <- distinct(naive_crossings, step.id)
+
+# we just need the unique step ids here, no spatial info. Converting to data frame is much quicker than distinct on an sf object
+crossing_steps <- naive_crossings %>% 
+  data.frame() %>% 
+  distinct(step.id)
 
 # first need to ID the ~2 steps before and after each crossing
 
@@ -53,7 +56,7 @@ get_step_clusters <- function(zstep, num.steps) {
 
 system.time(
   neighbor_steps_all <- map2_df(distinct(naive_crossings, step.id)$step.id, 1, get_step_clusters), gcFirst = TRUE
-)
+) # 2193 on 1/27/25
 
 
 # want all steps in a cluster to be close to 2 hours, currently using +- 10 min
