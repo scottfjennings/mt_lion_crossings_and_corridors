@@ -154,7 +154,8 @@ all_ud_rast_error <- map(all_ud_rast_safe, "error")[!sapply(map(all_ud_rast_safe
 # filter out errors
 all_ud_rast <- map(all_ud_rast_safe, "result")[sapply(map(all_ud_rast_safe, "error"), is.null)]
 
-
+# need to wrap the rasters to saveRDS
+# https://stackoverflow.com/questions/76517502/error-external-pointer-is-not-valid-when-saving-spatrasters-from-the-r-environm
 wrapped_all_ud_rast <- lapply(all_ud_rast, wrap)
 
 saveRDS(wrapped_all_ud_rast, here("model_objects/all_ud_rast_1step"))
@@ -170,7 +171,20 @@ crossing_steps <- names(all_ud_rast)
 # as of Jan 2025 using the merged road layer from A3_road_layers.R
 final_cleaned_road_layer <- readRDS(here("data/final_cleaned_road_layer")) %>% 
   st_transform(crs = 26910) %>%  # to UTM 10N
-  mutate(road.label = paste(label, leftcity, city.road.num, sep = "_"))
+  mutate(road.label = paste(label, leftcity, city.road.num, sep = "_"),
+         road.length = st_length(.))
+
+# excluding shorter road objects that are probably not very risky for mt lion.
+ggplot() +
+  geom_density(data = final_cleaned_road_layer, aes(x = as.numeric(road.length))) +
+  geom_density(data = final_cleaned_road_layer %>% filter(as.numeric(road.length) > 500), aes(x = as.numeric(road.length)), color = "red") +
+  geom_density(data = final_cleaned_road_layer %>% filter(as.numeric(road.length) > 1000), aes(x = as.numeric(road.length)), color = "blue")
+
+
+final_cleaned_road_layer <- final_cleaned_road_layer %>% 
+  filter(as.numeric(road.length) > 500)
+
+
 
 # zcrossing.step = crossing_steps$crossing.step[272]
 
