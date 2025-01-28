@@ -40,14 +40,17 @@ crossing_steps <- naive_crossings %>%
 #'
 #' @examples
 get_step_clusters <- function(zstep, num.steps) {
+  this.animal.id <- str_extract(zstep, "[^_]+")
+  this_puma_steps <- puma_steps %>% 
+    filter(animal.id == this.animal.id)
   
-  match.idx  <- which(puma_steps$step.id == zstep)
+  match.idx  <- which(this_puma_steps$step.id == zstep)
   span       <- seq(from = (-1 * num.steps), to = num.steps)
   extend.idx <- c(outer(match.idx, span, `+`))
-  extend.idx <- Filter(function(i) i > 0 & i <= nrow(puma_steps), extend.idx)
+  extend.idx <- Filter(function(i) i > 0 & i <= nrow(this_puma_steps), extend.idx)
   extend.idx <- sort(unique(extend.idx))
   
-  neighbor_steps = puma_steps[extend.idx, , drop = FALSE] %>% 
+  neighbor_steps = this_puma_steps[extend.idx, , drop = FALSE] %>% 
     mutate(crossing.step = zstep)
   return(neighbor_steps)
 }
@@ -58,6 +61,7 @@ system.time(
   neighbor_steps_all <- map2_df(distinct(naive_crossings, step.id)$step.id, 1, get_step_clusters), gcFirst = TRUE
 ) # 2193 on 1/27/25
 
+saveRDS(neighbor_steps_all, here("data/neighbor_steps_all"))
 
 # want all steps in a cluster to be close to 2 hours, currently using +- 10 min
 
