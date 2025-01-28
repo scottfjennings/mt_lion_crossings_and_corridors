@@ -65,7 +65,6 @@ system.time(
 # 320 sec
 names(all_clusters_bbmm) <- crossing_steps
 
-
 # check if any BBMMs resulted in NAN probability for any cell. prob_checker() is in utilities.R
 prob_check <- map_df(crossing_steps, prob_checker)
 
