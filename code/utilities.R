@@ -1,5 +1,5 @@
 
-
+# extract animal.id from the crossing step id ----
 #' animal.id_from_crossing.step
 #' 
 #' extract animal.id from the crossing step id. extracts all characters before the first underscore
@@ -190,6 +190,48 @@ prob_checker <- function(zbbmm) {
                            prob.size = length((bbmm$probability)),
                            crossing.step = zbbmm)
 }
+
+# get all roads that are within the 90% UD for a step ----
+#' get_all_bbmm_roads
+#' 
+#' get all roads that are within the 90% UD for a step 
+#'
+#' @param zcrossing.step character string indicating the ID for the cluster of points to evaluate
+#' @param road_layer one of c("final_cleaned_road_layer", "napa_sonoma_rds_equal_segs", "napa_sonoma_rds_intersection_splits")
+#' @details depending on which df you set as road_layer, output can serve different purposes. If napa_sonoma_rds_equal_segs, then allows calculating number of crossings per equal length segment for the full analysis. If napa_sonoma_rds_merged allows calculating the length of BBMM crossed segments to determine what size to cut the road layer into to create napa_sonoma_rds_equal_segs. if napa_sonoma_rds_intersection_splits allows IDing the mast parsimonious overall crossed segment of road (THIS NEEDS TESTING/CONFIRMATION)
+#'
+#' @return
+
+#' 
+#'
+#'
+#' @examples
+get_all_bbmm_roads <- function(road_layer = final_cleaned_road_layer, zcrossing.step) {
+  
+  # read UD raster  
+  rp <- all_ud_rast[[zcrossing.step]]
+  
+  
+  # clip the road layer to cut down computing time for the main st_intersection below
+  road_slicer <- st_bbox(rp)  %>% st_as_sfc()
+  road_slice <- st_intersection(road_layer, road_slicer)
+  
+  
+  #crossed_rd <- naive_crossings %>% 
+  # filter(step.id == zcrossing.step)
+  
+  bbmm_road_slice <- road_slice %>% 
+    select(-seg.length) %>% 
+    #    filter(label %in% crossed_rd$label) %>% 
+    #  filter(str_detect(label, paste(crossed_rd$label, collapse = "|"))) %>% 
+    st_as_sf() %>% 
+    st_intersection(st_as_sf(rp)) %>% 
+    mutate(crossed.seg.length = st_length(.))
+  
+  return(bbmm_road_slice)
+  
+}
+
 
 
 # probabilistic crossings plotter ----
