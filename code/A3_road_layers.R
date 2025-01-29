@@ -151,9 +151,9 @@ napa_sonoma_rds_filtered <- napa_sonoma_rds_filtered %>%
                            objectid %in% c("55073") ~ "W Dry Creek Rd",
                            objectid %in% c("39256") ~ "Frankel Ln",
                            objectid %in% c("51240") ~ "Golden Ridge Ave",
-                           objectid %in% c("6414", "6416", "6418", "6426", "6427") ~ "Hwy 116 N", # from Main St in Guerneville
-                           objectid %in% c("41683") ~ "Hwy 116 N", # from River Rd in Guerneville
-                           objectid %in% c("11518", "48508", "11519", "54528", "11452", "11455") ~ "Hwy 116 N", # from Front St in Forestville
+                           objectid %in% c("6414", "6416", "6418", "6426", "6427") ~ "Hwy 116", # from Main St in Guerneville
+                           objectid %in% c("41683") ~ "Hwy 116", # from River Rd in Guerneville
+                           objectid %in% c("11518", "48508", "11519", "54528", "11452", "11455") ~ "Hwy 116", # from Front St in Forestville
                            label == "Main St" & leftcity == "St Helena" ~ "Hwy 29",
                            label == "Lincoln Ave" & leftcity == "Calistoga" ~ "Hwy 29",
                            objectid %in% c("1341879") & label == "Syar Way" ~ "Kaiser Rd", # small segment of roundabout
@@ -165,6 +165,10 @@ napa_sonoma_rds_filtered <- napa_sonoma_rds_filtered %>%
                            objectid %in% c("46853") & leftcity == "Sonoma" ~ "Flint Ct", 
                            objectid %in% c("1338099") & leftcity == "Napa" ~ "W Imola Ave", 
                            objectid %in% c("32402") & label == "Casa Grande Rd" ~ "Ely Blvd S", 
+                           objectid %in% c("8095", "8096", "8099", "8100", "8101", "8103", "8104", "8105", "8107", "8233", "8235", "21027", "21155", "28527", "49189", "49392", "49421", "52342", "52345", "54030", "54031", "54032", "54602") & label == "Sebastopol Rd" ~ "Hwy 12", # continuous with Hwy 12 from Santa Rosa
+                           label == "Lakeville Hwy" ~ "Hwy 116",
+                           label %in% c("Hwy 116 N", "Hwy 116 S") ~ "Hwy 116",
+                           label %in% c("Hwy 12 E", "Hwy 12 W") ~ "Hwy 12",
                            TRUE ~ label)) %>% 
          # fixing city names
          mutate(leftcity = case_when(leftcity == "Nap" ~ "Napa",
@@ -292,7 +296,7 @@ multiple_roads_to_check <- napa_sonoma_rds_filtered_Dissolve %>%
   filter(!CONCATENAT %in% ok_split_roads$CONCATENAT) %>% 
   filter(!CONCATENAT %in% ok_split_roads2$CONCATE)
 
-# as of 1/27/25 there is just a single record in this filtered multiple_roads_to_check:
+# as of 1/27/25 there are just 1 record in this filtered multiple_roads_to_check:
 # label            leftcity CONCATENAT
 # Lovall Valley Rd Sonoma   12373_12374_12376_12377_18788_49911
 # this one is ok and should be in manual_edit_data/ok_split_roads2.csv but the other object is in manual_edit_data/problem_split_roads.csv
