@@ -50,7 +50,7 @@ make_equal_length_road_pts <- function(zroad) {
 
 
 system.time(
-  rd_pts <- map(final_cleaned_road_layer$road.label, make_road_pts)
+  rd_pts <- map(final_cleaned_road_layer$road.label, make_equal_length_road_pts)
 )
 names(rd_pts) <- final_cleaned_road_layer$road.label
 # 211 sec 9/30/24
