@@ -75,6 +75,7 @@ ok_step_dur <- neighbor_steps_all %>%
 ok_step_dur %>% 
   filter(all.step.dur.ok == TRUE) %>% 
   distinct(crossing.step) %>% nrow()
+# 4900 crossing clusters 1/30/25
 
 crossing_clusters <- ok_step_dur %>% 
   filter(all.step.dur.ok == TRUE) %>% 
@@ -83,7 +84,7 @@ crossing_clusters <- ok_step_dur %>%
   mutate(cluster.step.num = row_number()) %>% 
   ungroup()
 
-# decompose each step back into simple GPS points
+# decompose from steps (with start and end GPS points) back into simple fixes (single GPS points)
 
 crossing_clusters_gps <- crossing_clusters %>%  
   data.frame() %>% 
