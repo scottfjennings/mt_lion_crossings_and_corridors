@@ -88,6 +88,7 @@ napa_sonoma_rds_filtered <- napa_sonoma_rds %>%
 
 # 4.2. R IDed objects
 # there were also several objects that seemed mis-classified as private when they seemed to be public (i.e. in a long stretch of segments classified as Public there would be 1 segment classified as Private)
+#### ----  START OPTIONAL ----####
 # this helper object helps ID roads that had segments classified as Public and Private, 
 pub_priv <- napa_sonoma_rds %>% 
   data.frame() %>% 
@@ -97,6 +98,7 @@ pub_priv <- napa_sonoma_rds %>%
   group_by(label, leftcity) %>% 
   mutate(pub.n.priv = any(pubpriv == "Public") & any(pubpriv == "Private")) %>% 
   arrange(label, leftcity)
+#### ----  END OPTIONAL ----####
 
 # and based on viewing those in table and mapped format, and additional checking in ArcGIS, I came up with the following corrections  
 napa_sonoma_rds_filtered <- napa_sonoma_rds_filtered %>%
@@ -169,6 +171,7 @@ napa_sonoma_rds_filtered <- napa_sonoma_rds_filtered %>%
                            label == "Lakeville Hwy" ~ "Hwy 116",
                            label %in% c("Hwy 116 N", "Hwy 116 S") ~ "Hwy 116",
                            label %in% c("Hwy 12 E", "Hwy 12 W") ~ "Hwy 12",
+                           label %in% c("Hwy 101 N", "Hwy 101 S") ~ "Hwy 101",
                            TRUE ~ label)) %>% 
          # fixing city names
          mutate(leftcity = case_when(leftcity == "Nap" ~ "Napa",
@@ -269,6 +272,7 @@ saveRDS(napa_sonoma_rds_filtered, here("data/napa_sonoma_rds_filtered"))
 # and read back in to R for some further checking
 napa_sonoma_rds_filtered_Dissolve <- st_read("data/shapefiles/napa_sonoma_rds_fil_Dissolve.shp")
 
+# adding unique identifier for multiple dissolved roads with the same name in the same city
 napa_sonoma_rds_filtered_Dissolve <- napa_sonoma_rds_filtered_Dissolve %>%
   group_by(label, leftcity) %>% 
   mutate(city.road.num = row_number()) %>% 
