@@ -83,8 +83,12 @@ all_bridges_clean <- all_bridges %>%
   mutate(across(c(FAC, NAME), ~str_to_title(.)),
          NAME = case_when(NAME == "Warm Srings Creek" ~ "Warm Springs Creek", 
                           TRUE ~ NAME),
+         NAME = str_replace(NAME, "\\(", ""),
+         NAME = str_replace(NAME, "\\)", ""),
          FAC = abbreviate_roads(FAC),
          FAC = str_replace(FAC, "Sr ", "Hwy"),
+         FAC = str_replace(FAC, "\\)", ""),
+         FAC = str_replace(FAC, "\\(", ""),
          FAC = case_when(FAC %in% c("Eb Hwy 12", "Wb Hwy 12", "Hwy 12 Eb", "Hwy 12 Wb", "Hwy 12 E", "Hwy 12 W") ~ "Hwy 12",
                          FAC %in% c("Eb Hwy 29", "Wb Hwy 29", "Hwy 29 Eb", "Hwy 29 Wb", "Hwy 29 Nb", "Hwy 29 Sb") ~ "Hwy 29",
                          FAC %in% c("U.s. Highway 101", "U.s. Route 101", "U.s. Route 101 Nb", "U.s. Route 101 Sb", "Us Highway 101", "Us Highway 101 Nb", "Us Highway 101 Sb", "Hwy 101 Sb", "Hwy 101 Nb") ~ "Hwy 101",
@@ -168,11 +172,20 @@ all_bridges_clean <- all_bridges_clean %>%
   mutate(FAC = case_when(FAC == '2nd St' & OBJECTID %in% c('harvard_492') ~ '2nd St E',
                          FAC == 'A St' & OBJECTID %in% c('harvard_213') ~ 'S A St',
                          FAC == 'Agua Caliente Rd' & OBJECTID %in% c('sonoma_149', 'harvard_112') ~ 'W Agua Caliente Rd',
+                         #FAC == 'Broadway' & OBJECTID %in% c('state_1849') ~ 'Broadway 2',
+                         FAC == 'Caulfield Ln' & OBJECTID %in% c('state_1782') ~ 'Caulfield Ln 2',
                          FAC == 'Cloverdale Blvd' & OBJECTID %in% c('harvard_485') ~ 'N Cloverdale Blvd',
+                         FAC == 'Crocker Rd' & OBJECTID %in% c('harvard_105') ~ 'No Name Rd 28',
                          FAC == 'E St' & OBJECTID %in% c('harvard_211') ~ 'S E St',
+                         FAC == 'E Railroad Ave' & OBJECTID %in% c('sonoma_84', 'harvard_330') ~ 'E Railroad Ave 2',
                          FAC == 'Fitch Mountain Rd' & OBJECTID %in% c('harvard_415') ~ 'N Fitch Mountain Rd',
                          FAC == 'Fitch Mountain Rd' & OBJECTID %in% c('harvard_416', 'harvard_490') ~ 'S Fitch Mountain Rd',
-                         FAC == "Geysers Rd" & OBJECTID %in% c("harvard_104") ~ "Old Redwood Hwy",
+                         FAC == 'Fitzpatrick Ln' & OBJECTID %in% c('sonoma_72') ~ 'Fitzpatrick Ln 2',
+                         FAC == 'Franz Valley School Rd' & OBJECTID %in% c('sonoma_289', 'harvard_345') ~ 'Franz Valley School Rd 2',
+                         FAC == "Geysers Rd" & OBJECTID %in% c("harvard_104") ~ "Old Redwood Hwy 2",
+                         FAC == 'Highland Ter' & OBJECTID %in% c('harvard_457', 'sonoma_179') ~ 'Highland Ter 3',
+                         FAC == 'Hwy 116' & OBJECTID %in% c('state_1696', 'state_1832') ~ 'Hwy 116 2',
+                         FAC == 'Hwy 12' & OBJECTID %in% c('state_1705', 'state_1810') ~ 'Hwy 12 2',
                          FAC == "Hwy 12" & OBJECTID %in% c("state_1773", "state_1774") ~ "Farmers Ln",
                          FAC == "Hwy 121" & OBJECTID %in% c("state_1658", "state_1659", "state_1704") ~ "Arnold Dr",
                          FAC == "Hwy 121" & OBJECTID %in% c("state_1660", "state_1661", "state_1700", "state_1713") ~ "Fremont Dr",
@@ -181,33 +194,47 @@ all_bridges_clean <- all_bridges_clean %>%
                          FAC == "Hwy 121" & OBJECTID %in% c("state_1889") ~ "Silverado Trl",
                          FAC == "Hwy 121" & OBJECTID %in% c("state_1890", "state_1836")  ~ "Hwy 12",
                          FAC == "Hwy 128" & OBJECTID %in% c("state_1668") ~ "Old Redwood Hwy",
-                         FAC == "Hwy 128" & OBJECTID %in% c("state_1701") ~ "Geyserville Ave",
+                         FAC == "Hwy 128" & OBJECTID %in% c("state_1701") ~ "Geyserville Ave 2",
                          FAC == "Hwy 128" & OBJECTID %in% c("state_1842", "state_1843") ~ "Rutherford Road",
                          FAC == "Hwy 128" & OBJECTID %in% c("state_1846") ~ "Foothill Blvd",
                          FAC == "Hwy 128" & OBJECTID %in% c("state_1863", "state_1858") ~ "Sage Canyon Rd",
                          FAC == "Hwy 128" & OBJECTID %in% c("state_1887") ~ "Silverado Trl",
                          FAC == "Hwy 128" & OBJECTID %in% c("state_1888") ~ "Capell Valley Rd",
-                         FAC == "Hwy 29" & OBJECTID %in% c("state_1849") ~ "Broadway",
+                         FAC == "Hwy 29" & OBJECTID %in% c("state_1849") ~ "Broadway 2",
+                         #FAC == 'Broadway' & OBJECTID %in% c('state_1849') ~ 'Broadway 2',
                          FAC == 'Hoen Ave' & OBJECTID %in% c('harvard_146') ~ 'Hoen Ave Frontage Rd',
+                         FAC == 'Labath Ave' & OBJECTID %in% c('harvard_448') ~ 'Labath Ave 2',
                          FAC == 'Lincoln Ave' & OBJECTID %in% c('state_1870') ~ 'W Lincoln Ave',
+                         FAC == 'Lovall Valley Rd' & OBJECTID %in% c('sonoma_50') ~ 'Lovall Valley Rd 3',
+                         FAC == 'Mark West Station Rd' & OBJECTID %in% c('sonoma_256', 'harvard_278') ~ 'Mark West Station Rd 2',
                          FAC == "North Redwood Hwy" & OBJECTID %in% c("state_1667") ~ "Old Redwood Hwy",
+                         FAC == 'Oak Knoll Ave' & OBJECTID %in% c('harvard_55', 'harvard_56', 'harvard_82') ~ 'Oak Knoll Ave 2',
                          FAC == 'Old Duncans Grade' & OBJECTID %in% c('sonoma_205') ~ 'Old Duncans Grade Rd',
+                         FAC == 'Old Redwood Hwy' & OBJECTID %in% c('harvard_156', 'sonoma_239') ~ 'Old Redwood Hwy 2',
                          FAC == "Old Redwood Hwy" & OBJECTID %in% c("harvard_141") ~ "Commerce Blvd",
                          FAC == "Old Redwood Hwy" & OBJECTID %in% c("state_1820") ~ "Petaluma Blvd N",
+                         FAC == 'Railroad Ave' & OBJECTID %in% c('sonoma_95', 'sonoma_195', 'harvard_290', 'harvard_377') ~ 'Railroad Ave 2',
                          FAC == 'Redwood' & OBJECTID %in% c('harvard_142') ~ 'Redwood Dr',
                          FAC == "Redwood Rd" & OBJECTID %in% c("harvard_449") ~ "Redwood Dr",
                          FAC == "River Rd" & OBJECTID %in% c("harvard_476") ~ "Washington School Rd",
+                         FAC == 'Riverside Dr' & OBJECTID %in% c('harvard_511', 'sonoma_58') ~ 'Riverside Dr 2',
+                         FAC == 'S A St' & OBJECTID %in% c('harvard_213') ~ 'S A St 2',
                          FAC == "S Ely Rd" & OBJECTID %in% c("harvard_460") ~ "Ely Blvd S",
                          FAC == "Santa Rosa Ave" & OBJECTID %in% c('harvard_137', "sonoma_249") ~ "Roberts Lake Rd",
+                         FAC == 'Silverado Trl' & OBJECTID %in% c('harvard_11', 'harvard_12', 'harvard_21', 'harvard_14', 'harvard_5') ~ 'Silverado Trl 2',
                          FAC == 'Starrett Hill Dr' & OBJECTID %in% c('harvard_437') ~ 'Moscow Rd',
                          FAC == 'Steele Ln' & OBJECTID %in% c('harvard_227') ~ 'W Steele Ln',
                          FAC == 'Stewarts Point Skaggs Springs' & OBJECTID %in% c('sonoma_21', 'harvard_196', 'sonoma_8', 'sonoma_39', 'sonoma_44', 'sonoma_54', 'sonoma_24', 'sonoma_31', 'sonoma_51', 'harvard_264', 'harvard_193', 'harvard_195', 'harvard_194') ~ 'Stewarts Point Skaggs Springs Rd',
+                         FAC == 'St Helena Rd' & OBJECTID %in% c('sonoma_288', 'sonoma_290', 'harvard_297', 'harvard_296') ~ 'St Helena Rd 2',
+                         FAC == 'Stony Point Rd' & OBJECTID %in% c('harvard_172') ~ 'Stony Point Rd 2',
                          FAC == "Temelec Cir" & OBJECTID %in% c("harvard_536") ~ "Via Colombard",
+                         FAC == 'Tomales Rd' & OBJECTID %in% c('sonoma_64', 'harvard_171') ~ 'Tomales Rd 2',
                          FAC == "Trancas St" & OBJECTID %in% c("harvard_20") ~ "Monticello Rd",
                          FAC == 'Via Columbard' & OBJECTID %in% c('harvard_539') ~ 'Via Colombard',
                          FAC == "Vineyard Rd" & OBJECTID == "sonoma_30" ~ "River Rd",
                          FAC == "Washington St" & OBJECTID %in% c("harvard_127") ~ "E Washington St",
                          FAC == "Wild Oak Dr" & OBJECTID %in% c("harvard_528") ~ "Oakmont Dr",
+                         FAC == 'Willow Creek Rd' & OBJECTID %in% c('harvard_391', 'sonoma_197', 'sonoma_198', 'sonoma_200', 'sonoma_201', 'harvard_159', 'harvard_392', 'harvard_538') ~ 'Willow Creek Rd 2',
                          FAC == 'Yountville Cross R' & OBJECTID %in% c('harvard_92') ~ 'Yountville Cross Rd',
                          TRUE ~ FAC)) %>% 
   arrange(FAC, NAME, bridge.source) 
@@ -228,7 +255,7 @@ all_bridges_clean <- all_bridges_clean %>%
   group_by(FAC, NAME) %>%
   mutate(num.dups = n(),
          fac.name = paste(FAC, NAME, sep = "_"),
-         dup.label = paste(FAC, NAME, row_number(), sep = "_")) %>% 
+         dup.fac.name = paste(FAC, NAME, row_number(), sep = "_")) %>% 
   ungroup() %>% 
   st_as_sf()
 
@@ -255,25 +282,25 @@ get_close_dup_bridges = function(zfac.name, too.close.dist = 30) {
   
   dup <- all_bridges_dups %>% 
     filter(fac.name == zfac.name) %>% 
-    select(fac.name, dup.label) 
+    select(fac.name, dup.fac.name) 
   
   dup_dist <- st_distance(dup, dup) 
   
-  colnames(dup_dist) <- str_replace_all(c(dup$dup.label), " ", "zfooz")
+  colnames(dup_dist) <- str_replace_all(c(dup$dup.fac.name), " ", "zfooz")
   
   dup_dist_longer <- dup %>% data.frame() %>% select(-geometry) %>%  
     bind_cols(data.frame(dup_dist)) %>% 
-    pivot_longer(contains("zfooz"), names_to = "dup.label.to", values_to = "dup.distance") %>% 
+    pivot_longer(contains("zfooz"), names_to = "dup.fac.name.to", values_to = "dup.distance") %>% 
     distinct() %>% 
-    mutate(dup.label.to = str_replace_all(dup.label.to, "zfooz", " "),
+    mutate(dup.fac.name.to = str_replace_all(dup.fac.name.to, "zfooz", " "),
            dup.distance = as.numeric(dup.distance),
            too.close = dup.distance > 0 & dup.distance < too.close.dist) %>% 
-    filter(dup.label != dup.label.to)
+    filter(dup.fac.name != dup.fac.name.to)
   
   true_dups <- dup_dist_longer %>% 
     filter(too.close == TRUE) %>% 
-    pivot_longer(cols = contains("dup.label"), values_to = "dup.label") %>% 
-    distinct(dup.label, fac.name, too.close, dup.distance)
+    pivot_longer(cols = contains("dup.fac.name"), values_to = "dup.fac.name") %>% 
+    distinct(dup.fac.name, fac.name, too.close, dup.distance)
   
 }
 
@@ -313,11 +340,11 @@ road_bridges <- st_intersection(rds_buff10, all_bridges_no_close_dup) %>%
   rowwise() %>% # grepl in the next step doesn't work right without rowwise() but doesn't throw error
   mutate(correct.road = FAC == label)
 
-# it is ok to overwrite this as long as the manual filter layer from step 6 below has been saved with a different name
 road_bridges <- road_bridges %>% 
   mutate(manual.check = "n") %>% 
   select(FAC, label, correct.road, manual.check, everything())
 
+# it is ok to overwrite this as long as the manual filter layer from step 6 below has been saved with a different name
 st_write(road_bridges, here("data/shapefiles/road_bridges.shp"), append = FALSE)
 
 
@@ -352,7 +379,7 @@ st_write(road_bridges, here("data/shapefiles/road_bridges.shp"), append = FALSE)
 
 
 # the following file(s) were created from Feb 2025 onward and contain sufficient info to filter out bridge objects. these files are the true record of the bridges that were excluded from the analysis.
-exclude_bridges_files <- c("exclude_bridges_20250219.csv", "exclude_bridges_20250220.csv", "exclude_bridges_20250220B.csv", "exclude_bridges_20250220C.csv")
+exclude_bridges_files <- c("exclude_bridges_20250219.csv", "exclude_bridges_20250220.csv", "exclude_bridges_20250220B.csv", "exclude_bridges_20250220C.csv", "exclude_bridges_20250304.csv", "exclude_bridges_20250305.csv")
 
 
 #' exclude_bridge_reader
@@ -367,16 +394,20 @@ exclude_bridges_files <- c("exclude_bridges_20250219.csv", "exclude_bridges_2025
 #' @examples
 exclude_bridge_reader <- function(zfile) {
   exclude_bridges <- read.csv(here(paste("data/manual_edit_data/", zfile, sep = ""))) %>%
-    mutate(across(everything() ,~as.character(.))) %>% 
+    mutate(across(everything() ,~as.character(.)),
+           file = zfile) %>% 
     filter(mnl_chc == "y")
 }
 
 
 all_exclude_bridges <- map_df(exclude_bridges_files, exclude_bridge_reader) %>% 
   distinct() %>% 
-  select(FAC, label, NAME, OBJECTID = OBJECTI) %>% 
-  mutate(exclude.bridge = TRUE) %>% 
-  arrange(FAC, NAME)
+  select(FAC, label, NAME, OBJECTID = OBJECTI, file) %>% 
+  mutate(NAME = str_replace(NAME, "\\(", ""),
+         NAME = str_replace(NAME, "\\)", ""),
+         exclude.bridge = TRUE) %>% 
+  arrange(FAC, NAME) %>% 
+  filter(!str_detect(label, "_"))
 
 
 all_bridges_filtered <- road_bridges %>% 
