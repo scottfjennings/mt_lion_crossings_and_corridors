@@ -84,7 +84,7 @@ napa_sonoma_rds_equal_segs %>%
   bind_rows(.id = "label") %>% 
   st_as_sf() %>% 
   st_transform(crs = 26910) %>% 
-  st_write("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/roads/napa_sonoma_main_roads/napa_sonoma_rds_equal_segs.shp", append = FALSE)
+  st_write(here("data/shapefiles/napa_sonoma_rds_equal_segs.shp"), append = FALSE)
 
 saveRDS(napa_sonoma_rds_equal_segs, here("data/napa_sonoma_rds_equal_segs"))
 napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs"))
@@ -115,3 +115,28 @@ ggplot() +
 saveRDS(napa_sonoma_rds_intersection_splits, here("data/napa_sonoma_rds_intersection_splits"))
 
 
+
+# get the midpoint of each segment ----
+napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs"))
+
+napa_sonoma_rds_equal_segs_df <- napa_sonoma_rds_equal_segs %>% 
+  bind_rows()
+
+find_segment_midpoint <- function(zseg) {     
+  road_in <- filter(napa_sonoma_rds_equal_segs_df, seg.label == zseg)
+  zlength = st_length(road_in) %>% 
+    as.numeric()
+  segment_midpoint <- road_in %>%
+    st_as_sfc() %>%   
+    st_line_interpolate(dist = zlength/2) %>% 
+    data.frame() %>% 
+    mutate(seg.label = zseg)
+}
+
+
+
+seg_midpoints <- map_df(napa_sonoma_rds_equal_segs_df$seg.label, find_segment_midpoint)
+
+st_write(seg_midpoints, here("data/shapefiles/segment_midpoints.shp"), append = FALSE)
+
+saveRDS(seg_midpoints, here("data/seg_midpoints"))
