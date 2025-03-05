@@ -46,7 +46,8 @@ sonoma_rds <- read_sf(dsn= "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ra
 napa_sonoma_rds <- bind_rows(napa_rds, sonoma_rds) %>% 
   mutate(class = ifelse(str_detect(class, "Arterial"), "Arterial", class),
          class = ifelse(str_detect(class, "Collector"), "Collector", class),
-         class = ifelse(str_detect(class, "Ramp|Interchange"), "Ramp/Interchange", class))
+         class = ifelse(str_detect(class, "Ramp|Interchange"), "Ramp/Interchange", class),
+         label = ifelse(is.na(label), "No Name Rd", label))
 
 napa_sonoma_rds %>% 
   st_transform(crs = 26910) %>% 
@@ -276,9 +277,9 @@ napa_sonoma_rds_filtered_Dissolve <- st_read("data/shapefiles/napa_sonoma_rds_fi
 napa_sonoma_rds_filtered_Dissolve <- napa_sonoma_rds_filtered_Dissolve %>%
   group_by(label, leftcity) %>% 
   mutate(city.road.num = row_number()) %>% 
-  ungroup() %>% 
-  mutate(label = ifelse(is.na(label), paste(leftcity, "road", city.road.num, sep = "_"), label)) %>% 
-  arrange(label, leftcity)
+  ungroup() %>%
+  arrange(label, leftcity) %>% 
+  mutate(label = ifelse(city.road.num > 1, paste(label, city.road.num, sep = " "), label))
 
 
 # review cases where there are still multiple objects with the same road name in the same city
@@ -295,7 +296,7 @@ multiple_roads_to_check <- napa_sonoma_rds_filtered_Dissolve %>%
   group_by(label, leftcity) %>% 
   mutate(num.roads = max(city.road.num))%>% 
   ungroup() %>% 
-  filter(num.roads > 1, !str_detect(label, "_road_")) %>% 
+  filter(num.roads > 1, !str_detect(label, "No Name Rd")) %>% 
   filter(!CONCATENAT %in% problem_split_roads$CONCATENAT) %>% 
   filter(!CONCATENAT %in% ok_split_roads$CONCATENAT) %>% 
   filter(!CONCATENAT %in% ok_split_roads2$CONCATE)
@@ -319,3 +320,5 @@ st_write(final_cleaned_road_layer, here("data/shapefiles/final_cleaned_road_laye
 
 saveRDS(final_cleaned_road_layer, here("data/final_cleaned_road_layer"))
 
+
+final_cleaned_road_layer <- readRDS(here("data/final_cleaned_road_layer"))
