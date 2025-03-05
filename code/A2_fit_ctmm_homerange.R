@@ -112,7 +112,7 @@ kitty = "P41"
 
 
 kitty_plotter <- function(kitty) {
-zz <- as.sf(HR_UDS[[kitty]], DF = "PDF", level.UD = 0.999) %>% 
+zz <- as.sf(HR_UDS[[kitty]], DF = "PDF", level.UD = 0.95) %>% 
   st_transform(crs = 26910)
 
 yy <- analysis_table %>% 
@@ -135,10 +135,33 @@ kitty_plotter("P21")
 hr_exclude_pumas <- c("P36", #funky locations, in the ocean
                       "P14", # many points outside Sonoma/Napa
                       "P37", # not totally range resident and 100% HR covers much of sonoma 
-                      "P19", # many points outside Sonoma/Napa
+                      "P19" # many points outside Sonoma/Napa
                       )
 
 
 ggplot() +
   geom_sf(data = study_area_counties) +
   geom_sf(data = yy)
+
+## get home range polygon
+
+get_hr_polygon <- function(kitty, hr.level = 0.95) {
+zz <- as.sf(HR_UDS[[kitty]], DF = "PDF", level.UD = hr.level) %>% 
+  st_transform(crs = 26910) %>% 
+  separate(name, c("puma", "hr.level", "contour"), remove = FALSE, sep = " ")
+}
+
+zz <- get_hr_polygon("P21")
+
+hr_polygons <- map2_df(names(HR_UDS), 0.99, get_hr_polygon)
+
+hr_polygons %>% 
+  filter(contour == "est", !puma %in% hr_exclude_pumas) %>%
+  st_write(here("data/shapefiles/puma_homeranges_99.shp"), append = FALSE)
+
+
+
+hr_polygons %>% 
+  filter(contour == "est", !puma %in% hr_exclude_pumas) %>%
+  summarise() %>%
+  st_write(here("data/shapefiles/combined_puma_homeranges_99.shp"), append = FALSE)
