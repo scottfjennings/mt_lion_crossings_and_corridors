@@ -234,7 +234,8 @@ zpred_wt = predict(wt_crossings_mods_puma$dev60.sex.bridge, znewdat, se.fit = TR
   bind_cols(znewdat) %>% 
   mutate(lwr = fit - (1.96 * se.fit),
          upr = fit + (1.96 * se.fit),
-         dev.60 = dev.60 * 100)
+         dev.60 = dev.60 * 100,
+         sex = ifelse(sex == "F", "Female", "Male"))
 
 zpred_wt %>% 
   ggplot() +
@@ -243,14 +244,14 @@ zpred_wt %>%
   facet_wrap(~sex) +
   labs(x = "% developed area within 60m of road",
        y = "# crossings",
-       title = "Mean number of road crossings per mt lion per year per 1300m road segment",
+       #title = "Mean number of road crossings per mt lion per year per 1300m road segment",
        color = "# bridges per\nroad segment",
        fill = "# bridges per\nroad segment") +
   theme_bw() + 
   guides(colour = guide_legend(reverse=T),
          fill = guide_legend(reverse=T))
 
-ggsave(here("figures/wt_mod_plot_3bridge.png"), width = 7, height = 5)
+ggsave(here("figures/wt_mod_plot_3bridge_600dpi.png"), dpi = 600, width = 8.5)
 
 # fit with weighted crossings as response
 wt_crossings_mods <- fit_summed_crossing_mods("tot.wt.cross")
