@@ -60,6 +60,7 @@ get_step_clusters <- function(zstep, num.steps) {
 system.time(
   neighbor_steps_all <- map2_df(distinct(naive_crossings, step.id)$step.id, 1, get_step_clusters), gcFirst = TRUE
 ) # 2193 on 1/27/25
+# 2705 3/5/25
 
 saveRDS(neighbor_steps_all, here("data/neighbor_steps_all"))
 
