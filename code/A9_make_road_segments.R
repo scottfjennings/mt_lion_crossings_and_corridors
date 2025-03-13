@@ -28,7 +28,7 @@ final_cleaned_road_layer <- final_cleaned_road_layer %>%
 readRDS(here("model_objects/all_bbmm_roads_1step")) %>% 
   bind_rows(.id = "crossing.step") %>% 
   summary()
-
+# mean crossed.seg.length = 888
 #
 # 2 splitting roads into segments
 # slightly different method for splitting into equal segment vs splitting by road intersections
@@ -140,3 +140,17 @@ seg_midpoints <- map_df(napa_sonoma_rds_equal_segs_df$seg.label, find_segment_mi
 st_write(seg_midpoints, here("data/shapefiles/segment_midpoints.shp"), append = FALSE)
 
 saveRDS(seg_midpoints, here("data/seg_midpoints"))
+
+seg_midpoints_ll <- readRDS(here("data/seg_midpoints")) %>% 
+  st_as_sf() %>% 
+  st_transform(point, crs = 4326)
+
+# Extract coordinates into a dataframe
+coords <- st_coordinates(seg_midpoints_ll)
+seg_midpoints_ll %>% 
+  data.frame() %>% 
+  select(seg.label) %>% 
+  mutate(Longitude = coords[,1], Latitude = coords[,2]) %>% 
+  write.csv(here("data/road_segment_midpoints_ll.csv"), row.names = FALSE)
+  
+
