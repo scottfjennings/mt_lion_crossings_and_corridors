@@ -17,14 +17,14 @@ source(here("code/utilities.R"))
 
 options(scipen = 999)
 
-# from analysis1_naive_road_crossing.R
+# from A5_naive_road_crossing.R
 naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr"))
 
-# from prep_data1_gps_data.R
+# from A1_gps_data.R
 puma_steps <- readRDS(here("data/puma_steps")) %>% 
   mutate(step.dist.2hr = (step.dist/as.numeric(step.dur)) * 7200)
 
-# from analysis2_crossing_step_clusters.R
+# from A6_crossing_step_clusters.R
 crossing_clusters_gps <- readRDS(here("data/crossing_clusters_gps_1step")) 
 
 # then fit the dBBMM to each of those 3 step clusters
@@ -63,6 +63,7 @@ system.time(
   all_clusters_bbmm <- map(crossing_steps, calc_crossing_bbmm), gcFirst = TRUE
 )
 # 320 sec
+# 431
 names(all_clusters_bbmm) <- crossing_steps
 
 # check if any BBMMs resulted in NAN probability for any cell. prob_checker() is in utilities.R
