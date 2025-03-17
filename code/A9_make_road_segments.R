@@ -154,3 +154,46 @@ seg_midpoints_ll %>%
   write.csv(here("data/road_segment_midpoints_ll.csv"), row.names = FALSE)
   
 
+
+
+# add road classification back in. ----
+# 
+# napa_sonoma_rds_filtered is the last full road layer with classifications
+napa_sonoma_rds_filtered <- readRDS(here("data/napa_sonoma_rds_filtered")) %>% 
+  st_as_sf() %>% 
+  st_transform(crs = 26910)
+
+
+
+seg_midpoints <- readRDS(here("data/seg_midpoints")) %>% 
+  st_as_sf()
+
+
+# first attempt is with a spatial join trying to get the road class from the original road layer right at the midpoint
+# can use a much smaller buffer since seg_midpoints was derived from napa_sonoma_rds_filtered
+seg_midpoints_buff1 <- seg_midpoints %>% 
+  st_buffer(., 1) 
+
+seg_midpoints_road_type <- st_join(seg_midpoints_buff1, napa_sonoma_rds_filtered) %>% 
+  #separate(seg.label, c("midpoint.label", "leftcity", "road.num", "seg.num"), sep = "_", remove = FALSE) %>% 
+  rowwise() %>% # grepl in the next step doesn't work right without rowwise() but doesn't throw error
+  mutate(correct.road = str_detect(seg.label, label))
+
+# check for any incorrect roads that snuck in despite only using a 1 m buffer (i.e. if a midpoint was right at an intersection)
+filter(seg_midpoints_road_type, correct.road == FALSE) %>% view()
+
+
+# looks like only mismatches are valid ones (not due to differently spelled road names, abbreviations). no name changes needed, which is good because the segment midpoint names came from napa_sonoma_rds_filtered
+
+seg_midpoints_road_type_clean <- seg_midpoints_road_type %>% 
+  data.frame() %>% 
+  filter(correct.road == TRUE | is.na(class)) %>% 
+  select(seg.label, class) %>% 
+  distinct() %>% 
+  filter((seg.label != "Boyd St_Santa Rosa_1_1" & class != "Arterial"))
+
+# and there are no segments with class == NA. This must be because there are no class == NA in napa_sonoma_rds_filtered
+filter(seg_midpoints_road_type_clean, is.na(class)) %>% nrow()
+
+saveRDS(seg_midpoints_road_type_clean, here("data/seg_midpoints_road_type_clean"))
+
