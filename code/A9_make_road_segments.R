@@ -185,15 +185,21 @@ filter(seg_midpoints_road_type, correct.road == FALSE) %>% view()
 
 # looks like only mismatches are valid ones (not due to differently spelled road names, abbreviations). no name changes needed, which is good because the segment midpoint names came from napa_sonoma_rds_filtered
 
-seg_midpoints_road_type_clean <- seg_midpoints_road_type %>% 
+seg_midpoints_road_class <- seg_midpoints_road_type %>% 
   data.frame() %>% 
-  filter(correct.road == TRUE | is.na(class)) %>% 
+  filter(correct.road == TRUE) %>% 
   select(seg.label, class) %>% 
   distinct() %>% 
-  filter((seg.label != "Boyd St_Santa Rosa_1_1" & class != "Arterial"))
+  filter(!(seg.label == "Boyd St_Santa Rosa_1_1" & class == "Arterial"))
 
 # and there are no segments with class == NA. This must be because there are no class == NA in napa_sonoma_rds_filtered
-filter(seg_midpoints_road_type_clean, is.na(class)) %>% nrow()
+filter(seg_midpoints_road_class, is.na(class)) %>% nrow()
 
-saveRDS(seg_midpoints_road_type_clean, here("data/seg_midpoints_road_type_clean"))
+saveRDS(seg_midpoints_road_class, here("data/seg_midpoints_road_class"))
+seg_midpoints_road_class <- readRDS(here("data/seg_midpoints_road_class"))
+
+
+ggplot() +
+  geom_sf(data = filter(napa_sonoma_rds_filtered, label %in% c("14th St", "Monroe St"), leftcity == "Santa Rosa"), aes(color = as.character(objectid))) +
+  geom_sf(data = filter(seg_midpoints_buff1, seg.label == "14th St_Santa Rosa_1_1"), size = 6)
 
