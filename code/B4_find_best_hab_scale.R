@@ -36,54 +36,43 @@ all_hr_road_habitat %>%
 
 # similar distance buffers have more similar values of mean.tre.shr and mean.dev, although this is stronger for mean.tre.shr 
 
-# read the BBMM weighted road segment crossing densities
-wt_road_crossed_segs <- readRDS(here("data/wt_road_crossed_segs"))
+# read the summed segment crossings
+# for now using the moderately filtered crossings, those that consider only the naively crossed road within the BBMM
+########## will ultimately compare results from all three filter levels ##########
+# seg_crossing_sums <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_segs_only")) # more strictly filtered crossings
+seg_crossing_sums <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_roads_only"))
 
-# some duplicates (e.g. crossing.step P1_37472_11769) seem to be coming from equal length segments being split into intersection segments, and both of the subsequent parts being included in bbmm_crossed_equal_seg
-
-# count the number of raw and weighted crossings per segment
-sum_wt_road_crossed_segs <- wt_road_crossed_segs %>% 
-  data.frame() %>% 
-  select(-geometry) %>% 
-  mutate(animal.id = ifelse(animal.id == "P5*", "P5", animal.id)) %>% 
-  group_by(year, animal.id, seg.label) %>% 
-  summarise(tot.raw.cross = sum(raw.crossing),
-            tot.wt.cross = sum(weighted.crossing)) %>% 
-  ungroup() 
-
-
-filter(wt_road_crossed_segs, crossing.step == "P1_37472_11769") %>% view()
-
-filter(wt_road_crossed_segs, seg.label == "Warm Springs Rd_Glen Ellen_4", year == 2021, animal.id == "P1") %>% data.frame() %>% count(crossing.step) %>% view()
 
 #
 # for summed crossings; selecting the best spatial scale for each predictor ----
-ud_hab_sum_wt_crossed_segs_longer <- all_hr_road_habitat %>%
+hab_seg_crossing_sums_longer <- all_hr_road_habitat %>%
   data.frame() %>%
   select(mean.dev, mean.tre.shr, seg.label, buff, year, animal.id) %>% 
-  full_join(sum_wt_road_crossed_segs) %>% 
-  mutate(across(c(tot.raw.cross, tot.wt.cross), ~replace_na(., 0))) %>% 
+  full_join(seg_crossing_sums) %>% 
+  mutate(across(c(seg.raw.crossing, seg.wt.crossing), ~replace_na(., 0))) %>% 
   filter(!is.na(seg.label)) %>% 
   pivot_longer(cols = c("mean.dev", "mean.tre.shr"), names_to = "variable", values_to = "hab.value")
 
-puma_varbs <- ud_hab_sum_wt_crossed_segs_longer %>% 
+
+# create helper dfs for looping models
+puma_varbs <- hab_seg_crossing_sums_longer %>% 
   distinct(animal.id, variable)
 
 
-ud_hab_sum_wt_crossed_segs_longest <- ud_hab_sum_wt_crossed_segs_longer %>% 
-  pivot_longer(cols = c("tot.raw.cross", "tot.wt.cross"), names_to = "which.cross", values_to = "cross.value")
+hab_seg_crossing_sums_longest <- hab_seg_crossing_sums_longer %>% 
+  pivot_longer(cols = c("seg.raw.crossing", "seg.wt.crossing"), names_to = "which.cross", values_to = "cross.value")
 
-puma_varbs_cross <- ud_hab_sum_wt_crossed_segs_longest %>% 
+puma_varbs_cross <- hab_seg_crossing_sums_longest %>% 
   distinct(animal.id, variable, which.cross)
 
 # raw and weighted crossings in the same function ----
 
 fit_scale_mods <- function(zpuma, zvarb, zcross) {
-  seg_filt <- ud_hab_sum_wt_crossed_segs_longest %>% 
+  seg_filt <- hab_seg_crossing_sums_longest %>% 
     filter(animal.id == zpuma, variable == zvarb, which.cross == zcross, buff == 30) %>% 
     distinct(seg.label)
   
-  df <- ud_hab_sum_wt_crossed_segs_longest %>% 
+  df <- hab_seg_crossing_sums_longest %>% 
     filter(animal.id == zpuma, variable == zvarb, which.cross == zcross) %>% 
     right_join(seg_filt)
   
@@ -111,7 +100,7 @@ fit_scale_mods <- function(zpuma, zvarb, zcross) {
 
 system.time(
 hab_scale_aic <- pmap_df(list(puma_varbs_cross$animal.id, puma_varbs_cross$variable, puma_varbs_cross$which.cross), fit_scale_mods)
-) # 7 sec
+) # 7 sec, 9
 
 all_aic_viewer <- function(zvarb, zcross, zaic = Inf) {
 hab_scale_aic %>% 
@@ -129,40 +118,41 @@ all_aic_summer <- function(zvarb, zcross) {
   hab_scale_aic %>%  
     filter(variable == zvarb, which.cross == zcross) %>% 
     group_by(Modnames) %>% 
-    summarise(tot.delta = sum(Delta_AICc)) %>% 
+    summarise(tot.delta = sum(Delta_AICc),
+              sd.delta = sd(Delta_AICc)) %>% 
     ungroup() %>% 
     arrange(tot.delta)
 }
 
-# "mean.dev" and "tot.raw.cross"
-all_aic_viewer("mean.dev", "tot.raw.cross") %>% view()
-all_aic_summer("mean.dev", "tot.raw.cross")
+# "mean.dev" and "seg.raw.crossing"
+all_aic_viewer("mean.dev", "seg.raw.crossing") %>% view()
+all_aic_summer("mean.dev", "seg.raw.crossing")
 # mod60 is most best for mean.dev across all lions
 
 
-# "mean.dev" and "tot.wt.cross"
-all_aic_viewer("mean.dev", "tot.wt.cross") %>% view()
-all_aic_summer("mean.dev", "tot.wt.cross")
+# "mean.dev" and "seg.wt.crossing"
+all_aic_viewer("mean.dev", "seg.wt.crossing") %>% view()
+all_aic_summer("mean.dev", "seg.wt.crossing")
 # mod60 is most best across all lions
 
-# "mean.dev" and "tot.raw.cross"
-all_aic_viewer("mean.tre.shr", "tot.raw.cross") %>% view()
-all_aic_summer("mean.tre.shr", "tot.raw.cross")
+# "mean.dev" and "seg.raw.crossing"
+all_aic_viewer("mean.tre.shr", "seg.raw.crossing") %>% view()
+all_aic_summer("mean.tre.shr", "seg.raw.crossing")
 # mod300 is most best across all lions but mod30 is good for a couple lions that mod300 isn't good for so using mod30 and mod300
 
 
-# "mean.dev" and "tot.raw.cross"
-all_aic_viewer("mean.tre.shr", "tot.wt.cross") %>% view()
-all_aic_summer("mean.tre.shr", "tot.wt.cross")
+# "mean.dev" and "seg.raw.crossing"
+all_aic_viewer("mean.tre.shr", "seg.wt.crossing") %>% view()
+all_aic_summer("mean.tre.shr", "seg.wt.crossing")
 # No scale is very good across multiple lions. mod30 and mod300 are most best across all lions
 
 
 
 # filter the best scales and save ----
-habitat_varbs_scales <- ud_hab_sum_wt_crossed_segs_longer %>% 
+habitat_varbs_scales <- hab_seg_crossing_sums_longer %>% 
   filter((variable == "mean.dev" & buff %in% c(60)) | (variable == "mean.tre.shr" & buff %in% c(30, 300))) %>% 
   mutate(variable.buff = paste(str_replace(variable, "mean.", ""), buff, sep = ".")) %>% 
-  pivot_wider(id_cols = c(animal.id, seg.label, year, tot.raw.cross, tot.wt.cross), names_from = variable.buff, values_from = hab.value)
+  pivot_wider(id_cols = c(animal.id, seg.label, year, seg.raw.crossing, seg.wt.crossing), names_from = variable.buff, values_from = hab.value)
 
 saveRDS(habitat_varbs_scales, here("data/habitat_varbs_scales"))
 
@@ -176,25 +166,25 @@ habitat_varbs_scales <- readRDS(here("data/habitat_varbs_scales"))
 # first the raw crossings ----
 
 fit_scale_mods_sum_raw <- function(zpuma, zvarb) {
-  seg_filt <- ud_hab_sum_wt_crossed_segs_longer %>% 
+  seg_filt <- hab_seg_crossing_sums_longer %>% 
     filter(animal.id == zpuma, variable == zvarb, buff == 30) %>% 
     distinct(seg.label)
   
-  df <- ud_hab_sum_wt_crossed_segs_longer %>% 
+  df <- hab_seg_crossing_sums_longer %>% 
     filter(animal.id == zpuma, variable == zvarb) %>% 
     right_join(seg_filt)
   
   scale_mods <- list(
-    "mod30" = lm(tot.raw.cross ~ hab.value + year, data = filter(df, buff == 30)),
-    "mod60" = lm(tot.raw.cross ~ hab.value + year, data = filter(df, buff == 60)),
-    "mod90" = lm(tot.raw.cross ~ hab.value + year, data = filter(df, buff == 90)),
-    "mod120" = lm(tot.raw.cross ~ hab.value + year, data = filter(df, buff == 120)),
-    "mod150" = lm(tot.raw.cross ~ hab.value + year, data = filter(df, buff == 150)),
-    "mod180" = lm(tot.raw.cross ~ hab.value + year, data = filter(df, buff == 180)),
-    "mod210" = lm(tot.raw.cross ~ hab.value + year, data = filter(df, buff == 210)),
-    "mod240" = lm(tot.raw.cross ~ hab.value + year, data = filter(df, buff == 240)),
-    "mod270" = lm(tot.raw.cross ~ hab.value + year, data = filter(df, buff == 270)),
-    "mod300" = lm(tot.raw.cross ~ hab.value + year, data = filter(df, buff == 300))
+    "mod30" = lm(seg.raw.crossing ~ hab.value + year, data = filter(df, buff == 30)),
+    "mod60" = lm(seg.raw.crossing ~ hab.value + year, data = filter(df, buff == 60)),
+    "mod90" = lm(seg.raw.crossing ~ hab.value + year, data = filter(df, buff == 90)),
+    "mod120" = lm(seg.raw.crossing ~ hab.value + year, data = filter(df, buff == 120)),
+    "mod150" = lm(seg.raw.crossing ~ hab.value + year, data = filter(df, buff == 150)),
+    "mod180" = lm(seg.raw.crossing ~ hab.value + year, data = filter(df, buff == 180)),
+    "mod210" = lm(seg.raw.crossing ~ hab.value + year, data = filter(df, buff == 210)),
+    "mod240" = lm(seg.raw.crossing ~ hab.value + year, data = filter(df, buff == 240)),
+    "mod270" = lm(seg.raw.crossing ~ hab.value + year, data = filter(df, buff == 270)),
+    "mod300" = lm(seg.raw.crossing ~ hab.value + year, data = filter(df, buff == 300))
   )
   
   scale_aic <- aictab(scale_mods, names(scale_mods)) %>% 
@@ -252,25 +242,25 @@ summed_raw_hab_scale_aic %>%
 # then the weighted crossings ----
 
 fit_scale_mods <- function(zpuma, zvarb) {
-  seg_filt <- ud_hab_sum_wt_crossed_segs_longer %>% 
+  seg_filt <- hab_seg_crossing_sums_longer %>% 
     filter(animal.id == zpuma, variable == zvarb, buff == 30) %>% 
     distinct(seg.label)
   
-  df <- ud_hab_sum_wt_crossed_segs_longer %>% 
+  df <- hab_seg_crossing_sums_longer %>% 
     filter(animal.id == zpuma, variable == zvarb) %>% 
     right_join(seg_filt)
   
   scale_mods <- list(
-    "mod30" = lm(tot.wt.cross ~ hab.value + year, data = filter(df, buff == 30)),
-    "mod60" = lm(tot.wt.cross ~ hab.value + year, data = filter(df, buff == 60)),
-    "mod90" = lm(tot.wt.cross ~ hab.value + year, data = filter(df, buff == 90)),
-    "mod120" = lm(tot.wt.cross ~ hab.value + year, data = filter(df, buff == 120)),
-    "mod150" = lm(tot.wt.cross ~ hab.value + year, data = filter(df, buff == 150)),
-    "mod180" = lm(tot.wt.cross ~ hab.value + year, data = filter(df, buff == 180)),
-    "mod210" = lm(tot.wt.cross ~ hab.value + year, data = filter(df, buff == 210)),
-    "mod240" = lm(tot.wt.cross ~ hab.value + year, data = filter(df, buff == 240)),
-    "mod270" = lm(tot.wt.cross ~ hab.value + year, data = filter(df, buff == 270)),
-    "mod300" = lm(tot.wt.cross ~ hab.value + year, data = filter(df, buff == 300))
+    "mod30" = lm(seg.wt.crossing ~ hab.value + year, data = filter(df, buff == 30)),
+    "mod60" = lm(seg.wt.crossing ~ hab.value + year, data = filter(df, buff == 60)),
+    "mod90" = lm(seg.wt.crossing ~ hab.value + year, data = filter(df, buff == 90)),
+    "mod120" = lm(seg.wt.crossing ~ hab.value + year, data = filter(df, buff == 120)),
+    "mod150" = lm(seg.wt.crossing ~ hab.value + year, data = filter(df, buff == 150)),
+    "mod180" = lm(seg.wt.crossing ~ hab.value + year, data = filter(df, buff == 180)),
+    "mod210" = lm(seg.wt.crossing ~ hab.value + year, data = filter(df, buff == 210)),
+    "mod240" = lm(seg.wt.crossing ~ hab.value + year, data = filter(df, buff == 240)),
+    "mod270" = lm(seg.wt.crossing ~ hab.value + year, data = filter(df, buff == 270)),
+    "mod300" = lm(seg.wt.crossing ~ hab.value + year, data = filter(df, buff == 300))
   )
   
   scale_aic <- aictab(scale_mods, names(scale_mods)) %>% 
@@ -505,7 +495,7 @@ wt_hab_scale_aic %>%
 habitat_varbs_scales <- ud_hab_wt_crossed_segs_longer %>% 
   filter((variable == "mean.dev" & buff == 120) | (variable == "mean.tre.shr" & buff %in% c(30, 300))) %>% 
   mutate(variable.buff = paste(str_replace(variable, "mean.", ""), buff, sep = ".")) %>% 
-  pivot_wider(id_cols = c(animal.id, seg.label, year, tot.raw.cross, tot.wt.cross), names_from = variable.buff, values_from = hab.value)
+  pivot_wider(id_cols = c(animal.id, seg.label, year, seg.raw.crossing, seg.wt.crossing), names_from = variable.buff, values_from = hab.value)
 
 saveRDS(habitat_varbs_scales, here("data/habitat_varbs_scales"))
 
