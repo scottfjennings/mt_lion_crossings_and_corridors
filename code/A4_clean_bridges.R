@@ -453,6 +453,8 @@ all_bridges_filtered %>%
   select(FAC, label, leftcity, city.road.num, OBJECTID, NAME, LENG, geometry) %>% 
   st_write(here("data/shapefiles/final_cleaned_bridge_layer.shp"), append = FALSE)
 
+st_read(here("data/shapefiles/final_cleaned_bridge_layer.shp")) %>% 
+  saveRDS(here("data/final_cleaned_bridge_layer"))
 
 
 
