@@ -135,6 +135,21 @@ system.time(
 saveRDS(all_hr_road_habitat, here("data/all_hr_road_habitat"))
 all_hr_road_habitat <- readRDS(here("data/all_hr_road_habitat"))
 
+all_hr_road_habitat %>%
+  data.frame() %>% 
+  select(seg.label, animal.id, year, buff, mean.dev, mean.tre.shr) %>% 
+  saveRDS(here("data/analysis_inputs/all_hr_road_habitat_df"))
+
+
+homerange_segments <- all_hr_road_habitat %>% 
+  data.frame() %>% 
+  select(animal.id, seg.label) %>% 
+  distinct(animal.id, seg.label)
+
+saveRDS(homerange_segments, here("data/analysis_inputs/homerange_segments"))
+
+
+## optional checking below
 
 ggplot() +
   #geom_sf(data = puma_hr_uds, fill = NA) +

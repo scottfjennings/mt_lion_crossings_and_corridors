@@ -25,6 +25,7 @@ library(tidyterra)
 options(scipen = 999)
 
 source(here("code/utilities.R"))
+source(here("code/helper_data.R"))
 #
 
 # "P11_32188_16425"
@@ -35,7 +36,7 @@ final_cleaned_road_layer <- readRDS(here("data/final_cleaned_road_layer")) %>%
   mutate(road.label = paste(label, leftcity, city.road.num, sep = "_"),
          road.length = st_length(.)) 
 
-
+# use this to check if a segment is part of the naive crossed road
 naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr")) %>% 
   rename(crossing.step = step.id) %>% 
   st_transform(crs = 26910) %>% 
@@ -253,14 +254,14 @@ num_naive_road_crossings <- naive_road_crossings_df %>%
 count(num_naive_road_crossings, num.naive.road.crossings)
 
 
-##########  crossing step filtering 4.  how many segments inside the BBMM UD are part of the original naive crossed road ----
-# will run the analysis with all roads int he BBMM UD and just with the naively crossed road in the BBMM UD
+##########  crossing step filtering 4.  is each segment inside the BBMM UD part of the original naive crossed road? ----
+# will run the analysis with all roads in the BBMM UD and just with the naively crossed road in the BBMM UD
 seg_in_naive_road <- naive_crossings %>% 
   data.frame() %>% 
   distinct(road.label, crossing.step) %>%
   mutate(seg.in.naive.road = TRUE) %>% # so far this is just the roads from naive_crossings
   right_join(bbmm_equal_seg_weights %>% 
-               select(crossing.step, road.label, seg.label, sub.seg.label, raw.crossing, bbmm.segment.weight)) %>% # now add in all the segments in each BBMM UD
+               select(crossing.step, road.label, seg.label, sub.seg.label, raw.crossing, bbmm.segment.weight, class)) %>% # now add in all the segments in each BBMM UD
   arrange(crossing.step)
 
 count(seg_in_naive_road, seg.in.naive.road)
@@ -271,10 +272,11 @@ count(seg_in_naive_road, seg.in.naive.road)
 
 
 
-# get year and animal ID
-pumaid_steps_years <- puma_steps %>% 
-  mutate(year = year(datetime.local)) %>% 
-  distinct(animal.id, year, step.id) %>% 
+# get year and animal ID , and months (added 3/17/25)
+pumaid_steps_years_months <- puma_steps %>% 
+  mutate(year = year(datetime.local),
+         month = month(datetime.local)) %>% 
+  distinct(animal.id, year, month, step.id) %>% 
   rename(crossing.step = step.id)
 
 
@@ -284,81 +286,80 @@ tallied_steps_crossings <- num_naive_roads %>%
               select(-geometry)) %>% 
   full_join(num_naive_road_crossings) %>% 
   full_join(num_naive_seg_crossings) %>% 
-  left_join(pumaid_steps_years)
+  left_join(pumaid_steps_years_months)
+
+saveRDS(tallied_steps_crossings, here("data/tallied_steps_crossings"))
+
+# build up an analysis input data frame with a record for each road segment in each mt lion's home range, and the number of crossings per mt lion per month ----
 
 
-# need to fill in some missing classes
-# some can be filled by road.label from tallied_steps_crossings
-max_tallied_road_classes <- tallied_steps_crossings %>% 
-  mutate(class = factor(class, levels = c("Other", "Access Road", "Local", "Collector", "Arterial", "Highway", "Freeway")),
-         numeric.class = as.numeric(class)) %>% 
-  filter(!is.na(class)) %>% 
-  group_by(road.label) %>% 
-  filter(numeric.class == max(numeric.class)) %>% 
-  ungroup() %>% 
-  rename(tallied.road.max.class = class) %>% 
-  distinct(road.label, tallied.road.max.class) %>% 
-  mutate(tallied.road.max.class = as.character(tallied.road.max.class))
 
-# others need to be filled by label.city from napa_sonoma_rds_filtered
+# this has each segment ONCE for each mountain lion, but has many 0-crossed segments and also has segments repeated if they are in multiple home ranges
+homerange_segments <- readRDS(here("data/analysis_inputs/homerange_segments"))
 
-max_road_classes <- napa_sonoma_rds_filtered %>% 
-  data.frame() %>% 
-  select(-geometry) %>% 
-  mutate(class = factor(class, levels = c("Other", "Access Road", "Local", "Collector", "Arterial", "Highway", "Freeway")),
-         numeric.class = as.numeric(class)) %>% 
-  group_by(label.city, label) %>% 
-  filter(numeric.class == max(numeric.class)) %>% 
-  ungroup() %>% 
-  rename(road.max.class = class) %>% 
-  distinct(label.city, label, road.max.class) %>% 
-  mutate(road.max.class = as.character(road.max.class))
+# this has all the segment classes, not just for home ranges, should have only 1 record per segment
+seg_midpoints_road_class <- readRDS(here("data/seg_midpoints_road_class"))
+# join those 2
+hr_seg_midpoints_road_class <- full_join(homerange_segments, seg_midpoints_road_class) %>% 
+  filter(!animal.id %in% hr_exclude_pumas)
+
+# this has multiple segments per lion but no 0-crossed segments
+seg_crossing_sums_naive_roads_only <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_roads_only")) %>% 
+  filter(!animal.id %in% hr_exclude_pumas)
 
 
-tallied_steps_crossings <- tallied_steps_crossings %>% 
-  full_join(max_tallied_road_classes) %>% 
-  mutate(class = ifelse(is.na(class), tallied.road.max.class, class)) %>% 
-  mutate(label.city = str_extract(road.label, ".*(?=_)")) %>% 
-  full_join(max_road_classes) %>% 
-  mutate(class = ifelse(is.na(class), road.max.class, class)) %>% 
-  select(crossing.step, num.naive.roads, road.label, seg.in.naive.road, seg.label, raw.crossing, bbmm.segment.weight, num.naive.road.crossings, num.naive.seg.crossings, animal.id, year, class, tallied.road.max.class, label.city, label)
+puma_month_years <- seg_crossing_sums_naive_roads_only %>% 
+  distinct(animal.id, year, month)
 
+full_seg_puma_month_year <- hr_seg_midpoints_road_class %>% 
+  full_join(puma_month_years)
 
 
 
 # then finally filter to just the crossings that will be considered in the analysis
 # and tally the raw and weighted crossings for each segment for each puma in each year
 
-
-
 seg_crossing_sums_naive_segs_only <- tallied_steps_crossings %>% 
   filter(num.naive.roads < 3, num.naive.seg.crossings == 1) %>% 
-  group_by(animal.id, year, seg.label, class) %>% 
+  group_by(animal.id, year, month, seg.label, class) %>% 
   summarise(seg.raw.crossing = sum(raw.crossing),
             seg.wt.crossing = sum(bbmm.segment.weight)) %>% 
-  ungroup()
+  ungroup() %>% 
+  full_join(full_seg_puma_month_year) %>% # joinging them results in more records than either has
+  mutate(seg.raw.crossing = replace_na(seg.raw.crossing, 0),
+         seg.wt.crossing = replace_na(seg.wt.crossing, 0))
+
 
 saveRDS(seg_crossing_sums_naive_segs_only, here("data/analysis_inputs/seg_crossing_sums_naive_segs_only"))
 
   
 seg_crossing_sums_naive_roads_only <- tallied_steps_crossings %>% 
   filter(num.naive.roads < 3, num.naive.road.crossings == 1) %>% 
-  group_by(animal.id, year, seg.label, class) %>% 
+  group_by(animal.id, year, month, seg.label, class) %>% 
   summarise(seg.raw.crossing = sum(raw.crossing),
             seg.wt.crossing = sum(bbmm.segment.weight)) %>% 
-  ungroup()
+  ungroup()%>% 
+  full_join(full_seg_puma_month_year) %>% # joinging them results in more records than either has
+  mutate(seg.raw.crossing = replace_na(seg.raw.crossing, 0),
+         seg.wt.crossing = replace_na(seg.wt.crossing, 0))
+
 
 saveRDS(seg_crossing_sums_naive_roads_only, here("data/analysis_inputs/seg_crossing_sums_naive_roads_only"))
+seg_crossing_sums_naive_roads_only <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_roads_only"))
 
 
 seg_crossing_sums_all_bbmm <- tallied_steps_crossings %>% 
   filter(num.naive.roads < 3) %>% 
-  group_by(animal.id, year, seg.label, class) %>% 
+  group_by(animal.id, year, month, seg.label, class) %>% 
   summarise(seg.raw.crossing = sum(raw.crossing),
             seg.wt.crossing = sum(bbmm.segment.weight)) %>% 
-  ungroup()
+  ungroup()%>% 
+  full_join(full_seg_puma_month_year) %>% # joinging them results in more records than either has
+  mutate(seg.raw.crossing = replace_na(seg.raw.crossing, 0),
+         seg.wt.crossing = replace_na(seg.wt.crossing, 0))
 
-count(seg_crossing_weights_all_bbmm, animal.id, year) %>% 
+
+count(seg_crossing_sums_all_bbmm, animal.id, year) %>% 
   pivot_wider(id_cols = animal.id, names_from = year, values_from = n)
 # very few segments for P12, P24, P25
 
@@ -379,8 +380,34 @@ all_lions_years_seg_crossing_sums_naive_roads_only <- tallied_steps_crossings %>
   summarise(seg.raw.crossing = sum(raw.crossing),
             seg.wt.crossing = sum(bbmm.segment.weight)) %>% 
   ungroup() %>% 
+  full_join(full_seg_puma_month_year) %>% # joinging them results in more records than either has
+  mutate(seg.raw.crossing = replace_na(seg.raw.crossing, 0),
+         seg.wt.crossing = replace_na(seg.wt.crossing, 0)) %>% 
   left_join(seg_geometries)
 
 
 st_write(all_lions_years_seg_crossing_sums_naive_roads_only, here("data/shapefiles/all_lions_years_seg_crossing_sums_naive_roads_only.shp"), append = FALSE)
+
+
+
+
+
+
+# some checking for number of records:
+# should now be just 1 record for each segment, mt lion, year, month
+count(seg_crossing_sums, seg.label, animal.id, year, month) %>% filter(n > 1) %>% nrow()
+# if nrow = 0, good
+count(seg_crossing_sums, animal.id, year, month) %>% nrow()
+# should still be = nrow(puma_month_years)
+
+saveRDS(seg_crossing_sums, here("data/analysis_inputs/seg_crossing_sums"))
+
+seg_crossing_monthly_means <- seg_crossing_sums %>% 
+  group_by(animal.id, seg.label) %>% 
+  summarise(mean.seg.raw.crossing = mean(seg.raw.crossing),
+            mean.seg.wt.crossing = mean(seg.wt.crossing)) %>% 
+  ungroup()
+
+saveRDS(seg_crossing_monthly_means, here("data/analysis_inputs/seg_crossing_monthly_means"))
+
 
