@@ -103,6 +103,7 @@ bbmm_equal_seg_weights <- bbmm_equal_seg_df %>%
   
 saveRDS(bbmm_equal_seg_weights, here("data/bbmm_equal_seg_weights"))
 
+bbmm_equal_seg_weights <- readRDS(here("data/bbmm_equal_seg_weights"))
 
 
 
