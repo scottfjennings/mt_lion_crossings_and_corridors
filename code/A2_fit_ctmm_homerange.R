@@ -145,7 +145,7 @@ ggplot() +
 
 ## get home range polygon
 
-get_hr_polygon <- function(kitty, hr.level = 0.95) {
+get_hr_polygon <- function(kitty, hr.level = 0.99) {
 zz <- as.sf(HR_UDS[[kitty]], DF = "PDF", level.UD = hr.level) %>% 
   st_transform(crs = 26910) %>% 
   separate(name, c("puma", "hr.level", "contour"), remove = FALSE, sep = " ")
@@ -153,7 +153,7 @@ zz <- as.sf(HR_UDS[[kitty]], DF = "PDF", level.UD = hr.level) %>%
 
 zz <- get_hr_polygon("P21")
 
-hr_polygons <- map2_df(names(HR_UDS), 0.95, get_hr_polygon)
+hr_polygons <- map2_df(names(HR_UDS), 0.99, get_hr_polygon)
 
 hr_polygons %>% 
   filter(contour == "est", !puma %in% hr_exclude_pumas) %>%
@@ -162,9 +162,9 @@ hr_polygons %>%
 
 #st_read(here("data/shapefiles/puma_homeranges_99.shp")) %>% 
 hr_polygons %>% 
-  filter(contour == "est", puma %in% analysis_pumas) %>% 
+  filter(contour == "est", puma %in% analysis_pumas, !puma %in% few_crossings_pumas) %>% 
   summarise() %>%
-  st_write(here("data/shapefiles/combined_puma_homeranges_95.shp"), append = FALSE)
+  st_write(here("data/shapefiles/combined_puma_homeranges_99.shp"), append = FALSE)
 
 
 st_read(here("data/shapefiles/puma_homeranges_99.shp")) %>% 
