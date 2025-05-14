@@ -18,10 +18,10 @@ library(tidyverse)
 
 # Load raster, shapefile (home ranges), and point data
 impervious_rast <- readRDS("data/sonoma_napa_nlcd/sonoma_napa_impervious2019_rast")  # terra SpatRaster
-home_ranges <- st_read("data/shapefiles/combined_puma_homeranges_99.shp")         # sf object
+home_ranges <- st_read("data/shapefiles/combined_puma_homeranges_95.shp")         # sf object
 # Reproject home_ranges to match raster CRS
 home_ranges_proj <- st_transform(home_ranges, crs = crs(impervious_rast))
-points_df <- readRDS("data/analysis_table")                                       # DataFrame with lat/lon
+points_df <- readRDS("data/analysis_table_max_filt_puma")                                       # DataFrame with lat/lon
 # Convert points to sf and reproject to raster CRS
 points_sf <- st_as_sf(points_df, coords = c("longitude", "latitude"), crs = 4326)
 points_proj <- st_transform(points_sf, crs = crs(impervious_rast))
@@ -85,7 +85,7 @@ imperv_vals_all %>%
 # create patches
 
 # Threshold: only include cells > 50% impervious
-binary_imperv <- ifel(imperv_mask < 20 | is.nan(imperv_mask), NA, 1)
+binary_imperv <- ifel(imperv_mask < 50 | is.nan(imperv_mask), NA, 1)
 plot(binary_imperv, main = "binary_imperv")
 # create and label contiguous patches
 patches_rast <- patches(binary_imperv, directions = 8, zeroAsNA = TRUE)
@@ -193,7 +193,7 @@ outer_boundaries <- st_sf(
 )
 
 # export shp to check in ArcGIS Pro
-st_write(outer_boundaries, "data/shapefiles/predictor_variable_checking/impervious_patch_outer_boundaries_20.shp", delete_layer = TRUE)
+st_write(outer_boundaries, "data/shapefiles/predictor_variable_checking/impervious_patch_outer_boundaries_50.shp", delete_layer = TRUE)
 
 # next calculate distances
 
@@ -215,13 +215,14 @@ points_inside$dist_to_boundary_m <- as.numeric(min_dists)
 
 points_inside %>% 
   ggplot() +
-  geom_density(aes(x = dist_to_boundary_m))
+  geom_density(aes(x = dist_to_boundary_m)) +
+  geom_vline(xintercept = 50)
 
 # very few points are >150m from the developed edge
 
 # create a new polygon with the core developed area - all patches of >50% impervious, shrunk 150m
 # 1. Create 150-meter "interior buffer" (shrinking each polygon inward)
-interior_polygons <- st_buffer(outer_boundaries, dist = -300)
+interior_polygons <- st_buffer(outer_boundaries, dist = -50)
 
 # 2. Remove invalid geometries that may arise during negative buffering
 interior_polygons <- st_make_valid(interior_polygons)
@@ -230,7 +231,7 @@ interior_polygons <- interior_polygons[!st_is_empty(interior_polygons), ]
 # 3. (Optional) Filter out small or sliver polygons, if needed
 interior_polygons <- interior_polygons[st_area(interior_polygons) > units::set_units(1000, "m^2"), ]
 
-st_write(interior_polygons, "data/shapefiles/predictor_variable_checking/impervious_patch_interior_polygons_20.shp", delete_layer = TRUE)
+st_write(interior_polygons, "data/shapefiles/predictor_variable_checking/impervious_patch_interior_polygons_50.shp", delete_layer = TRUE)
 
 
 #### export raster of just high density development (impervious >80) ----
