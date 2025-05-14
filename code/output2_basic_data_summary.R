@@ -38,7 +38,7 @@ puma_sexes %>%
 analysis_table %>% 
   group_by(animal.id) %>% 
   summarise(tot.gps = n()) %>% 
-  ungroup() %>% #view()
+  ungroup() %>% view()
   summarise(mean.gps = mean(tot.gps),
             sd.gps = sd(tot.gps),
             min.gps = min(tot.gps),
@@ -61,7 +61,8 @@ bbmm_crossed_equal_seg %>%
 
 # steps
 puma_steps <- readRDS(here("data/puma_steps"))  %>% 
-  filter(!animal.id %in% exclude_pumas, !animal.id %in% hr_exclude_pumas)
+  filter(!animal.id %in% exclude_pumas, !animal.id %in% hr_exclude_pumas) %>% 
+  filter(animal.id %in% analysis_pumas)
 
 # number of lions 
 distinct(puma_steps, animal.id) %>% nrow()
