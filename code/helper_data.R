@@ -29,11 +29,19 @@ hr_exclude_pumas <- c("P36", #funky locations, in the ocean
 )
 
 
-p31_exclude_segments <- c("Hwy 1_16", "Hwy 1_17", "Hwy 1_18", "Hwy 1_19", "Hwy 1_20", "Hwy 1_21", "Hwy 1_22", "Hwy 1_23")
+p31_exclude_segments <- c("Hwy 1_Jenner_16", "Hwy 1_Jenner_17", "Hwy 1_Jenner_18", "Hwy 1_Jenner_19", "Hwy 1_Jenner_20", "Hwy 1_Jenner_21", "Hwy 1_Jenner_22", "Hwy 1_Jenner_23")
 
 
 analysis_pumas <- c("P1", "P11", "P12", "P13", "P16", "P2", "P24", "P25", "P26", "P31", "P33", "P34", "P39", "P4", "P41", "P44", "P5", "P6", "P9")
 
+few_crossings_pumas <- c("P11", # 77
+                         "P12", # 19
+                         "P24", # 6
+                         "P25", # 5
+                         "P26", # 44
+                         "P34", # 17
+                         "P44" # 11
+                         )
 
 # from Harvey, J. A., Q. Martins, and J. F. Benson. 2024. Impact of Sublethal Injuries on Mountain Lion Predation and Spatial Ecology. Canadian Wildlife Biology & Management 13.
 puma_injuries <- data.frame(puma = c("P1", "P4"),
