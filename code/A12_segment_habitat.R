@@ -39,7 +39,7 @@ puma_years <- readRDS(here("data/crossing_clusters_gps_1step")) %>%
 hr_uds <- readRDS(here("model_objects/puma_hr_uds"))
 
 
-# mask habitat to home range
+# mask habitat to home range. all 3 raster layers ----
 #' get_hr_road_habitat
 #' 
 #' extract habitat values from USDA RAP layers 
@@ -59,11 +59,13 @@ get_hr_road_habitat <- function(zpuma, zyear) {
     st_transform(crs = 26910)   %>% 
     filter(str_detect(name, "est"))
   
-  hab_masker <- st_buffer(puma_hr_uds, 5000)
+  # this is to filter the habitat raster to speed processing time when extracting values around each road segment. need the 500 m buffer to get all the habitat for segments that are right on the homerange edge.
+  hab_masker <- st_buffer(puma_hr_uds, 500)
   
-  #zhab = rast(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_", zyear, "_2024-03-19.TIF", sep = ""))
+  zhab = rast(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_", zyear, "_2024-03-19.TIF", sep = ""))
   
-  zhab = rast(here(paste("data/sonoma_napa_usda_rap/sonoma_napa_usda_rap_", zyear, ".TIF", sep = "")))
+  
+  #zhab = rast(here(paste("data/sonoma_napa_usda_rap/sonoma_napa_usda_rap_", zyear, ".TIF", sep = "")))
   # filter to just the layers needed to speed masking - looks like it is ~1/3 the time as the full habitat layers
   ind <- match(c("TRE","SHR", "Development"), names(zhab))
   ind <- ind[!is.na(ind)]
@@ -132,13 +134,21 @@ system.time(
   all_hr_road_habitat  <- map2_df(puma_years$puma, puma_years$year, get_hr_road_habitat)
 ) # 11678 10/15/24; 23742.20  3/13/25
 
-saveRDS(all_hr_road_habitat, here("data/all_hr_road_habitat"))
+saveRDS(all_hr_road_habitat, here("data/all_hr_road_habitat_95"))
 all_hr_road_habitat <- readRDS(here("data/all_hr_road_habitat"))
+
+all_hr_road_habitat %>% 
+  filter(buff == 60, animal.id %in% analysis_pumas) %>% 
+  select(road.label, seg.label, mean.dev, geometry) %>% 
+  distinct() %>% 
+  st_write(here("data/shapefiles/predictor_variable_checking/dev60.shp"), append = FALSE)
+
+
 
 all_hr_road_habitat %>%
   data.frame() %>% 
-  select(seg.label, animal.id, year, buff, mean.dev, mean.tre.shr) %>% 
-  saveRDS(here("data/analysis_inputs/all_hr_road_habitat_df"))
+  dplyr::select(seg.label, animal.id, year, buff, mean.dev, mean.tre.shr) %>% 
+  saveRDS(here("data/analysis_inputs/all_hr_road_habitat_df_95"))
 
 
 homerange_segments <- all_hr_road_habitat %>% 
@@ -146,7 +156,7 @@ homerange_segments <- all_hr_road_habitat %>%
   select(animal.id, seg.label) %>% 
   distinct(animal.id, seg.label)
 
-saveRDS(homerange_segments, here("data/analysis_inputs/homerange_segments"))
+saveRDS(homerange_segments, here("data/analysis_inputs/homerange_segments_95"))
 
 
 ## optional checking below
@@ -162,4 +172,5 @@ ggplot() +
 # there are a few bad road sections for P31 along Hwy 1 where some of the buffer area is in the ocean and we get NA habitat values
 filter(all_hr_road_habitat, is.na(mean.dev) & !animal.id %in% hr_exclude_pumas) %>% distinct(seg.label) %>% paste(., collapse = ", ")
 # I create a helper df for these in helper_data.R
+
 
