@@ -221,7 +221,7 @@ get_all_bbmm_roads <- function(road_layer = final_cleaned_road_layer, zcrossing.
   # filter(step.id == zcrossing.step)
   
   bbmm_road_slice <- road_slice %>% 
-    select(road.label, geometry) %>% 
+    #select(road.label, geometry) %>% 
     st_as_sf() %>% 
     st_intersection(st_as_sf(rp)) %>% 
     mutate(crossed.seg.length = st_length(.))
