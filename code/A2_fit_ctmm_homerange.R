@@ -153,15 +153,22 @@ zz <- as.sf(HR_UDS[[kitty]], DF = "PDF", level.UD = hr.level) %>%
 
 zz <- get_hr_polygon("P21")
 
-hr_polygons <- map2_df(names(HR_UDS), 0.99, get_hr_polygon)
+hr_polygons <- map2_df(names(HR_UDS), 0.95, get_hr_polygon)
 
 hr_polygons %>% 
   filter(contour == "est", !puma %in% hr_exclude_pumas) %>%
-  st_write(here("data/shapefiles/puma_homeranges_99.shp"), append = FALSE)
+  st_write(here("data/shapefiles/puma_homeranges_95.shp"), append = FALSE)
 
 
-
+#st_read(here("data/shapefiles/puma_homeranges_99.shp")) %>% 
 hr_polygons %>% 
-  filter(contour == "est", !puma %in% hr_exclude_pumas) %>%
+  filter(contour == "est", puma %in% analysis_pumas) %>% 
   summarise() %>%
-  st_write(here("data/shapefiles/combined_puma_homeranges_99.shp"), append = FALSE)
+  st_write(here("data/shapefiles/combined_puma_homeranges_95.shp"), append = FALSE)
+
+
+st_read(here("data/shapefiles/puma_homeranges_99.shp")) %>% 
+  #hr_polygons %>% 
+  filter(contour == "est", puma %in% analysis_pumas) %>% 
+  st_write(here("data/shapefiles/analysis_puma_homeranges_99.shp"), append = FALSE)
+
