@@ -172,5 +172,5 @@ creek_bridge_wt_cross <- fit_creek_bridge_mods("seg.wt.crossing")
 creek_bridge_raw_cross$aic
 creek_bridge_wt_cross$aic
 
-# stream X road intersection points is by far better supported predictor of # road crossings than the cleaned bridge layer
+# stream X road intersection points is by far better supported predictor of # road crossings than the cleaned bridge layer (dAICc = 2423.186)
 # this may be due to the segments with bridges over non-streams
