@@ -2,7 +2,8 @@
 
 library(tidyverse)
 library(here)
-
+library(sf)
+library(terra)
 
 
 # plotting function to check how individual crossings look compared to the roads in the BBMM UD ----
@@ -18,8 +19,14 @@ final_cleaned_road_layer <- readRDS(here("data/final_cleaned_road_layer")) %>%
 
 all_ud_rast <- readRDS(here("model_objects/all_ud_rast_1step")) %>% 
   lapply(unwrap) 
+
 crossing_clusters_gps <- readRDS(here("data/crossing_clusters_gps_1step"))
 
+naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr"))
+
+bbmm_equal_seg_weights <- readRDS(here("data/bbmm_equal_seg_weights"))
+
+crossing_steps = distinct(crossing_clusters_gps, crossing.step)$crossing.step
 
 count(bbmm_equal_seg_weights, crossing.step, seg.label) %>% filter(n > 1) %>% view()
 
@@ -60,7 +67,7 @@ prob_road_crossing_plotter <- function(zcrossing.step) {
   road_slice <- st_intersection(final_cleaned_road_layer, road_slicer)
   
   naive_rd_names <- naive_crossings %>% 
-    filter(crossing.step == zcrossing.step) %>% 
+    filter(step.id == zcrossing.step) %>% 
     data.frame() %>% 
     distinct(road.label) %>% 
     summarise(road.label = paste(road.label, collapse = "|"))
@@ -78,7 +85,7 @@ prob_road_crossing_plotter <- function(zcrossing.step) {
     geom_sf(data = bbmm_equal_seg_weights, aes(color = seg.label), linewidth = 3) +
     #geom_sf(data = all_bbmm_roads[[zcrossing.step]] %>% st_as_sf(), color = "red", linewidth = 2) +
     geom_path(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing), color = "#377EB8", linewidth = 1) +
-    geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing), color = "#377EB8", size = 2) +
+    geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step), aes(x = easting, y = northing), color = "#377EB8", size = 3) +
     #    geom_point(data = filter(crossing_clusters_gps, crossing.step == zcrossing.step, (step.id == zcrossing.step | lag(step.id) == zcrossing.step)), aes(x = easting, y = northing, color = step.id), size = 4) +
     scale_color_brewer(palette = "Dark2") +
     labs(title = zcrossing.step,
@@ -99,6 +106,16 @@ prob_road_crossing_plotter("P13_90388_40336") +
         axis.text=element_blank(),
         axis.ticks=element_blank())
 ggsave(here("figures/bbmm_example2a.png"))
+
+
+prob_road_crossing_plotter("P1_23163_2921") + 
+  #guides(colour=FALSE) +
+  labs(title = "") +
+  theme(axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank())
+ggsave(here("figures/bbmm_example_P1_23163_2921.png"))
+
 
 # these have split UD with crossed roads going through the gaps
 bad_ud_steps <- c("P13_29892_26815", "P16_37473_47485", "P4_23163_122801")
