@@ -119,6 +119,12 @@ saveRDS(analysis_table, here("data/analysis_table"))
 
 # load lion GPS data and convert to steps ----
 analysis_table <- readRDS(here("data/analysis_table"))
+
+readRDS(here("data/analysis_table")) %>% 
+  filter(animal.id %in% analysis_pumas, !animal.id %in% few_crossings_pumas) %>% 
+ # write.csv(here("data/analysis_table_max_filt_puma.csv"), row.names = FALSE) 
+  saveRDS(here("data/analysis_table_max_filt_puma"))
+
 #
 # simpler way of creating steps, this doesn't resample so we keep all steps ----
 # need to convert to sf object so can change lat/lon to UTM
