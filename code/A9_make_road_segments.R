@@ -96,6 +96,8 @@ ggplot() +
 
 
 
+
+
 # 2b. split the merged road objects anywhere there is a road intersection ----
 # get the points for each intersection along each road
 napa_sonoma_rds_intersections <- st_collection_extract(st_intersection(final_cleaned_road_layer), "POINT")
