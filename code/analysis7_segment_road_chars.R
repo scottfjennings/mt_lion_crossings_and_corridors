@@ -23,11 +23,15 @@ study_area_counties <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyo
 
 
 # roads
-# I used Add Spatial Join tool in ArcGIS Pro to add road class and other attributes to the equal length segment object.
-# then exported it as a shapefile
-napa_sonoma_rds_equal_segs_shp <- st_read(here("data/napa_sonoma_rds_equal_segs.shp"))
-# for some reason the shp doesn't read into R with the column names
-names(napa_sonoma_rds_equal_segs_shp) <- c("label", "label.city", "seg.length", "seg.label", "OBJECTID.1", "join.count", "target.fid", "objectid", "label.2", "leftcity", "speedlimit", "lanes", "surface", "class", "pubpriv", "county", "shape.length", "geometry")
+
+# need final_cleaned_road_layer objects >500m to filter naive_crossings
+final_cleaned_road_layer <- readRDS(here("data/final_cleaned_road_layer")) %>% 
+  st_transform(crs = 26910)  %>%  # to UTM 10N
+  mutate(road.label = paste(label, leftcity, city.road.num, sep = "_"),
+         road.length = st_length(.)) 
+
+
+napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs"))
 
 napa_sonoma_rds_equal_segs <- napa_sonoma_rds_equal_segs_shp %>% 
   select(label.city, seg.length, seg.label, leftcity, speedlimit, lanes, surface, class, pubpriv, county, geometry) %>% 
