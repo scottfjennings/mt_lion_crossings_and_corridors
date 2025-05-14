@@ -366,14 +366,17 @@ count(seg_crossing_sums_all_bbmm, animal.id, year) %>%
 saveRDS(seg_crossing_sums_all_bbmm, here("data/analysis_inputs/seg_crossing_sums_all_bbmm"))
 
 
-# also tally all crossings across all lions and save as SHP
+# also tally all crossings across all lions and save as SHP 
 
-seg_geometries <- bbmm_equal_seg_weights %>% 
-  select(seg.label, geometry) %>% 
-  group_by(seg.label) %>% 
-  summarise()
+
+tallied_steps_crossings <- readRDS(here("data/tallied_steps_crossings"))
+
+
+seg_geometries <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
+  bind_rows() %>% 
+  distinct(seg.label, geometry)
   
-
+# this is the raw sum of all crossings, not scaled for how long each lion was collared
 all_lions_years_seg_crossing_sums_naive_roads_only <- tallied_steps_crossings %>% 
   filter(num.naive.roads < 3, num.naive.road.crossings == 1) %>% 
   group_by(seg.label, class) %>% 
@@ -389,8 +392,41 @@ all_lions_years_seg_crossing_sums_naive_roads_only <- tallied_steps_crossings %>
 st_write(all_lions_years_seg_crossing_sums_naive_roads_only, here("data/shapefiles/all_lions_years_seg_crossing_sums_naive_roads_only.shp"), append = FALSE)
 
 
+# this is scaled to the average crossings per month across all lions, and also has the number of different lions using each segment
 
 
+seg_crossing_sums_naive_roads_only <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_roads_only"))
+
+monthly_mean <- seg_crossing_sums_naive_roads_only %>% 
+  group_by(seg.label) %>% 
+  summarise(mean.seg.raw.crossing = mean(seg.raw.crossing),
+            mean.seg.wt.crossing = mean(seg.wt.crossing)) %>% 
+  ungroup()
+
+tot_lions <- seg_crossing_sums_naive_roads_only %>% 
+  filter(seg.raw.crossing > 0) %>% 
+  distinct(animal.id, seg.label) %>% 
+  group_by(seg.label) %>% 
+  summarise(num.lions = n(),
+            which.lions = paste(animal.id, collapse = ", "))
+
+monthly_mean_tot_lions <- full_join(monthly_mean, tot_lions) %>% 
+  full_join(seg_geometries) %>% 
+  mutate(num.lions = replace_na(num.lions, 0),
+         which.lions = replace_na(which.lions, "No crossings"))
+
+
+monthly_mean_tot_lions %>% 
+  st_write(here("data/shapefiles/monthly_mean_tot_lions.shp"), append = FALSE)
+
+monthly_mean_tot_lions %>% 
+  filter(mean.seg.raw.crossing > 0) %>% 
+  st_write(here("data/shapefiles/monthly_mean_tot_lions.shp"), append = FALSE)
+
+
+monthly_mean_tot_lions %>% 
+  filter(mean.seg.raw.crossing == 0) %>% 
+  st_write(here("data/shapefiles/not_crossed_segs.shp"), append = FALSE)
 
 
 # some checking for number of records:
