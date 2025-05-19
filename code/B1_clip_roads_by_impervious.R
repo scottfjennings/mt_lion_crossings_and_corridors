@@ -243,3 +243,25 @@ imperv80_rast <- ifel(impervious_rast > 80, 1, NA)
 writeRaster(imperv80_rast, filename = here::here("data/shapefiles/predictor_variable_checking/impervious_over80.tif"), filetype = "GTiff", overwrite = TRUE)
 
 
+# identify segments to exclude if they are in this continuous developed area ----
+
+interior_polygons <- st_read("data/shapefiles/predictor_variable_checking/impervious_patch_interior_polygons_50.shp")
+
+
+segments_in_homeranges <- readRDS(here("data/segments_in_homeranges"))
+
+
+
+# Ensure coordinate reference systems match
+segments_in_homeranges <- st_transform(segments_in_homeranges, st_crs(interior_polygons))
+
+# Spatial join: assign each road segment to continuous developed area or  not
+hr_segments_out_in_developed <- st_join(segments_in_homeranges, interior_polygons, join = st_within)
+
+hr_segments_out_in_developed <- hr_segments_out_in_developed %>% 
+  mutate(in.continuous.developed = ifelse(is.na(patches), "no", "yes")) %>% 
+  data.frame() %>% 
+  select(seg.label, "animal.id" = puma, in.continuous.developed)
+
+saveRDS(hr_segments_out_in_developed, here("data/hr_segments_out_in_developed"))
+

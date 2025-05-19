@@ -58,8 +58,7 @@ crossing_analysis_table <- readRDS(here("data/analysis_inputs/seg_crossing_sums_
   mutate(#class = factor(class, levels = c("Local", "Collector", "Arterial", "Highway")),
          class = ifelse(class == "Local", "Local", "Not local"),
          crossed.bin = as.numeric(seg.wt.crossing > 0)) %>% 
-  filter(animal.id != "P25",
-         !animal.id %in% few_crossings_pumas)
+  filter(!animal.id %in% few_crossings_pumas)
 
 
 
