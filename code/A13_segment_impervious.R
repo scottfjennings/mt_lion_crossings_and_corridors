@@ -47,13 +47,17 @@ writeRaster(
 
 # reading data
 # home range utilization distributions from A2_fit_ctmm_homerange.R
-hr_uds <- readRDS(here("model_objects/puma_hr_uds"))
+
+combined_puma_homeranges_95 <- st_read(here("data/shapefiles/combined_puma_homeranges_95.shp"))
+
+# this is to filter the habitat raster to speed processing time when extracting values around each road segment. need the 300 m buffer to get all the habitat for segments that are right on the homerange edge.
+hab_masker <- st_buffer(combined_puma_homeranges_95, 300)
 
 
-# roads
-napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
-  bind_rows() %>% 
-  rename("road.seg.length" = seg.length)
+# roads 
+# this is just the segments in the combined homerange polygon for the 12 analysis lions
+segments_in_combined_homeranges <- readRDS(here("data/segments_in_combined_homeranges"))
+
 
 # impervious raster from above
 impervious_rast = readRDS(here("data/sonoma_napa_nlcd/sonoma_napa_impervious2019_rast"))
@@ -61,50 +65,19 @@ impervious_rast = readRDS(here("data/sonoma_napa_nlcd/sonoma_napa_impervious2019
 impervious_rast <- project(impervious_rast, "EPSG:26910")
 
 
-# mask habitat to home range
-#' get_hr_road_habitat
-#' 
-#' extract habitat values from USDA RAP layers 
-#' this is the step where the roads get restricted to the home range of each mt lion
-#'
-#' @param zpuma 
-#' @param zyear 
-#' @param zlayer any layer in the Harvey_north bay habitat/RSF_Layers_ rasters. for this analysis one of c("TRE", "SHR", "Development")
-#'
-#' @return
-#' @export
-#'
-#' @examples
-get_hr_road_impervious <- function(zpuma) {
-  
-  # this is the home range polygon for zpuma
-  puma_hr_uds <- hr_uds[[zpuma]] %>% 
-    as.sf(., DF = "PDF", level.UD = 0.999) %>% 
-    st_transform(crs = 26910)   %>% 
-    filter(str_detect(name, "est"))
-  
-  # this is to filter the habitat raster to speed processing time when extracting values around each road segment. need the 500 m buffer to get all the habitat for segments that are right on the homerange edge.
-  hab_masker <- st_buffer(puma_hr_uds, 300)
   
   # First crop to the extent of the home range polygon
-  zhab_cropped <- crop(impervious_rast, hab_masker)
-  zhab_cropped <- project(zhab_cropped, "EPSG:26910") # for some reason need to reproject after cropping
+imperv_cropped <- crop(impervious_rast, hab_masker)
+imperv_cropped <- project(imperv_cropped, "EPSG:26910") # for some reason need to reproject after cropping
   
   # Then mask using the polygon shape, this sets cells outside hab_masker to NA
-  hr_hab <- mask(zhab_cropped, hab_masker)
+  hr_imperv <- mask(imperv_cropped, hab_masker)
   
-  # mask roads to home range
-  hr_roads <- st_intersection(napa_sonoma_rds_equal_segs, puma_hr_uds) %>% 
-    mutate(hr.seg.length = st_length(.))
-  
-  
-  # Reproject the sf lines to match the CRS of the raster
-  hr_roads <- st_transform(hr_roads, crs(hr_hab))
   
   # function to create buffer around road segment
   buffer_roads <- function(zbuff) {
-    buff_road <- hr_roads %>% 
-      group_by(road.label, seg.label, road.seg.length, hr.seg.length) %>% 
+    buff_road <- segments_in_combined_homeranges %>% 
+      group_by(seg.label) %>% 
       st_buffer(., zbuff, endCapStyle = "ROUND") %>% 
       mutate(buff = zbuff)
   }
@@ -113,35 +86,33 @@ get_hr_road_impervious <- function(zpuma) {
   
   hr_road_buffers_df <- hr_road_buffers %>% 
     data.frame() %>% 
-    select(road.label, seg.label, buff) %>% 
+    select(seg.label, buff) %>% 
     mutate(ID = row_number()) 
   # add ID field because terra::extract() has this argument "ID - logical. Should an ID column be added? If so, the first column returned has the IDs (record numbers) of y" and adding the same field here allows joining in the next line
   
   # extract habitat along roads
-  lyr_ext <- terra::extract(hr_hab, hr_road_buffers, cells = TRUE)  %>% 
+  lyr_ext <- terra::extract(hr_imperv, hr_road_buffers, cells = TRUE)  %>% 
     full_join(hr_road_buffers_df) %>% 
     rename("percent.impervious" = mrlc_download__NLCD_2019_Impervious_L48)
   
-  # calculate mean per buffer per segment and rejoin with hr_roads to add geometry field back
-  rds_buff_mean_lyr <- lyr_ext %>% 
-    group_by(road.label, seg.label, buff) %>% 
+  # calculate mean per buffer per segment and rejoin with segments_in_combined_homeranges to add geometry field back
+  all_hr_road_impervious <- lyr_ext %>%
+    select(seg.label, percent.impervious, buff) %>% 
+    group_by(seg.label, buff) %>% 
     summarise(mean.percent.impervious = mean(percent.impervious),
-              num.cell = n()) %>% 
+              max.percent.impervious = max(percent.impervious),
+              med.percent.impervious = median(percent.impervious),
+              num.cell = n(),
+              num.cell.50 = sum(percent.impervious >= 50, na.rm = TRUE),
+              num.cell.20 = sum(percent.impervious >= 20, na.rm = TRUE),
+              num.cell.g0 = sum(percent.impervious > 0, na.rm = TRUE),
+              num.cell.0 = sum(percent.impervious == 0, na.rm = TRUE)) %>% 
     ungroup() %>% 
-    full_join(hr_roads) %>% 
-    st_as_sf() %>% 
-    dplyr::mutate(animal.id = zpuma)
+    mutate(percent.dev.o.l.m.h = 100 * (num.cell.g0/num.cell),
+           percent.dev.l.m.h = 100 * (num.cell.20/num.cell),
+           percent.dev.m.h = 100 * (num.cell.50/num.cell),
+           percent.undev = 100 * (num.cell.0/num.cell))
   
-  return(rds_buff_mean_lyr)
-}
-
-
-ztest <- get_hr_road_impervious("P1")
-
-system.time(
-  all_hr_road_impervious  <- map_df(analysis_pumas, get_hr_road_impervious)
-) #174
-
-
+  
 
 saveRDS(all_hr_road_impervious, here("data/all_hr_road_impervious"))
