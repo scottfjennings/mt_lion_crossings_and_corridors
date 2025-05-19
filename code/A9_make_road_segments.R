@@ -7,7 +7,7 @@ library(sf)
 
 options(scipen = 999)
 source(here("code/utilities.R"))
-
+source(here("code/helper_data.R"))
 
 
 # 10/1/24 asked Emi for GIS help on combining the road segments then breaking into equal length segments
@@ -187,7 +187,7 @@ filter(seg_midpoints_road_type, correct.road == FALSE) %>% view()
 
 # looks like only mismatches are valid ones (not due to differently spelled road names, abbreviations). no name changes needed, which is good because the segment midpoint names came from napa_sonoma_rds_filtered
 
-seg_midpoints_road_class <- seg_midpoints_road_type %>% 
+seg_labels_road_class <- seg_midpoints_road_type %>% 
   data.frame() %>% 
   filter(correct.road == TRUE) %>% 
   select(seg.label, class) %>% 
@@ -195,13 +195,64 @@ seg_midpoints_road_class <- seg_midpoints_road_type %>%
   filter(!(seg.label == "Boyd St_Santa Rosa_1_1" & class == "Arterial"))
 
 # and there are no segments with class == NA. This must be because there are no class == NA in napa_sonoma_rds_filtered
-filter(seg_midpoints_road_class, is.na(class)) %>% nrow()
+filter(seg_labels_road_class, is.na(class)) %>% nrow()
 
-saveRDS(seg_midpoints_road_class, here("data/seg_midpoints_road_class"))
-seg_midpoints_road_class <- readRDS(here("data/seg_midpoints_road_class"))
+saveRDS(seg_labels_road_class, here("data/seg_labels_road_class"))
+seg_labels_road_class <- readRDS(here("data/seg_labels_road_class"))
 
 
-ggplot() +
-  geom_sf(data = filter(napa_sonoma_rds_filtered, label %in% c("14th St", "Monroe St"), leftcity == "Santa Rosa"), aes(color = as.character(objectid))) +
-  geom_sf(data = filter(seg_midpoints_buff1, seg.label == "14th St_Santa Rosa_1_1"), size = 6)
+# filter segments to homeranges and classify each segment as being in the appropriate home range ----
+
+
+napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
+  bind_rows(.id = "label") %>% 
+  st_as_sf() 
+
+# individual lion homeranges ----
+puma_homeranges_95 <- st_read(here("data/shapefiles/puma_homeranges_95.shp")) %>% 
+  filter(puma %in% analysis_pumas, !puma %in% few_crossings_pumas)
+
+# Ensure coordinate reference systems match
+napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(puma_homeranges_95))
+
+# Spatial join: assign each road segment to overlapping home range
+segments_in_homeranges <- st_join(napa_sonoma_rds_equal_segs, puma_homeranges_95, join = st_within)
+
+# Optional: filter out segments not within any homerange
+segments_in_homeranges <- segments_in_homeranges %>% filter(!is.na(puma))
+
+# checking
+segments_in_homeranges %>% 
+  data.frame() %>% 
+  select(-geometry) %>% 
+  group_by(seg.label) %>% 
+  summarise(pumas = paste(puma, collapse = "; "),
+            npuma = n()) %>%
+  view()
+
+saveRDS(segments_in_homeranges, here("data/segments_in_homeranges"))
+
+# all lions combined homerange polygon ----
+combined_puma_homeranges_95 <- st_read(here("data/shapefiles/combined_puma_homeranges_95.shp"))
+
+# Ensure coordinate reference systems match
+napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(combined_puma_homeranges_95))
+
+# Spatial join: assign each road segment to overlapping home range
+segments_in_combined_homeranges <- st_join(napa_sonoma_rds_equal_segs, combined_puma_homeranges_95, join = st_within)
+
+# Optional: filter out segments not within any homerange
+segments_in_combined_homeranges <- segments_in_combined_homeranges %>% filter(!is.na(FID))
+
+# checking
+segments_in_combined_homeranges %>% 
+  data.frame() %>% 
+  select(-geometry) %>% 
+  count(seg.label) %>%
+  view()
+
+saveRDS(segments_in_combined_homeranges, here("data/segments_in_combined_homeranges"))
+
+
+
 
