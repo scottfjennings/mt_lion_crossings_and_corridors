@@ -5,7 +5,6 @@ library(here)
 library(sf)
 library(terra)
 library(units)
-library(ctmm)
 
 options(scipen = 999)
 
@@ -13,30 +12,31 @@ options(scipen = 999)
 source(here("code/helper_data.R"))
 
 
-study_area_counties <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/study_area_counties")  %>% 
-  filter(NAME %in% c("Napa", "Sonoma")) %>% 
-  select(NAME) %>% 
-  st_transform(crs = 26910)
 
-
-# roads
-napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
-  bind_rows() %>% 
-  rename("road.seg.length" = seg.length)
+# roads 
+# this is just the segments in the combined homerange polygon for the 12 analysis lions
+segments_in_combined_homeranges <- readRDS(here("data/segments_in_combined_homeranges"))
 
 
 
-puma_years <- readRDS(here("data/crossing_clusters_gps_1step")) %>% 
-  mutate(year = year(datetime.local), 
-         puma = str_extract(crossing.step, "^[^_]+(?=_)"),
-         puma = ifelse(puma == "P5*", "P5", puma)) %>% 
+study_years <- readRDS(here("data/crossing_clusters_gps_1step")) %>% 
+  mutate(year = year(datetime.local)#, 
+         #puma = str_extract(crossing.step, "^[^_]+(?=_)"),
+         #puma = ifelse(puma == "P5*", "P5", puma)
+         ) %>% 
   ungroup() %>% 
-  distinct(puma, year)
+  distinct(year) %>% 
+  pull(year) # convert df column to string
 
-# redoing this to be by puma
+# redoing this to NOT be by puma
+# May 2025 realized doing this by puma means extracting habitat multiple time for each segment where home ranges overlap.
+# quicker to just do each segment once
 
 # reading in data takes some time so doing it once outside the function
-hr_uds <- readRDS(here("model_objects/puma_hr_uds"))
+
+combined_puma_homeranges_95 <- st_read(here("data/shapefiles/combined_puma_homeranges_95.shp"))
+# this is to filter the habitat raster to speed processing time when extracting values around each road segment. need the 300 m buffer to get all the habitat for segments that are right on the homerange edge.
+hab_masker <- st_buffer(combined_puma_homeranges_95, 300)
 
 
 # mask habitat to home range. all 3 raster layers ----
@@ -45,22 +45,13 @@ hr_uds <- readRDS(here("model_objects/puma_hr_uds"))
 #' extract habitat values from USDA RAP layers 
 #' this is the step where the roads get restricted to the home range of each mt lion
 #'
-#' @param zpuma 
 #' @param zyear 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-get_hr_road_habitat <- function(zpuma, zyear) {
-  
-  puma_hr_uds <- hr_uds[[zpuma]] %>% 
-    as.sf(., DF = "PDF", level.UD = 0.999) %>% 
-    st_transform(crs = 26910)   %>% 
-    filter(str_detect(name, "est"))
-  
-  # this is to filter the habitat raster to speed processing time when extracting values around each road segment. need the 500 m buffer to get all the habitat for segments that are right on the homerange edge.
-  hab_masker <- st_buffer(puma_hr_uds, 500)
+get_hr_road_habitat <- function(zyear) {
   
   zhab = rast(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Harvey_north bay habitat/RSF_Layers_", zyear, "_2024-03-19.TIF", sep = ""))
   
@@ -70,16 +61,15 @@ get_hr_road_habitat <- function(zpuma, zyear) {
   ind <- match(c("TRE","SHR", "Development"), names(zhab))
   ind <- ind[!is.na(ind)]
   zhab_filtered <- zhab[[ names(zhab)[ind] ]]
-  zhab_filtered <- project(zhab_filtered, "EPSG:26910")
   
-  hr_hab <- mask(zhab_filtered, hab_masker)
-  # mask roads to home range
-  hr_roads <- st_intersection(napa_sonoma_rds_equal_segs, puma_hr_uds) %>% 
-    mutate(hr.seg.length = st_length(.))
+  
+  zhab_cropped <- crop(zhab_filtered, hab_masker)
+  zhab_cropped <- project(zhab_cropped, "EPSG:26910") # for some reason need to reproject after cropping
+  hr_hab <- mask(zhab_cropped, hab_masker)
   
   buffer_roads <- function(zbuff) {
-  buff_road <- hr_roads %>% 
-    group_by(road.label, seg.label, road.seg.length, hr.seg.length) %>% 
+  buff_road <- segments_in_combined_homeranges %>% 
+    group_by(seg.label) %>% 
     st_buffer(., zbuff, endCapStyle = "ROUND") %>% 
     mutate(buff = zbuff)
   }
@@ -121,21 +111,32 @@ get_hr_road_habitat <- function(zpuma, zyear) {
               mean.tre.shr = mean(tre.shr),
               num.cell = n()) %>% 
     ungroup() %>% 
-    full_join(hr_roads) %>% 
+    full_join(segments_in_combined_homeranges) %>% 
     st_as_sf() %>% 
-    dplyr::mutate(year = zyear,
-                  animal.id = zpuma)
+    dplyr::mutate(year = zyear)
   
   return(rds_buff_mean_tre_shr_dev)
   }
 
 
+
+
 system.time(
-  all_hr_road_habitat  <- map2_df(puma_years$puma, puma_years$year, get_hr_road_habitat)
-) # 11678 10/15/24; 23742.20  3/13/25
+  all_hr_road_habitat  <- map_df(study_years, get_hr_road_habitat)
+) # 606!!! 2.5% the time of doing it by individual (and for a larger area)
+
 
 saveRDS(all_hr_road_habitat, here("data/all_hr_road_habitat_95"))
-all_hr_road_habitat <- readRDS(here("data/all_hr_road_habitat"))
+
+# checking below here
+all_hr_road_habitat <- readRDS(here("data/all_hr_road_habitat_95"))
+
+
+ggplot() +
+  geom_sf(data = filter(all_hr_road_habitat, buff == 30), aes(color = mean.tre))
+
+
+
 
 all_hr_road_habitat %>% 
   filter(buff == 60, animal.id %in% analysis_pumas) %>% 
