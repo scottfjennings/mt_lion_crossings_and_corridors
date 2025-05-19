@@ -13,6 +13,7 @@ source(here("code/helper_data.R"))
 # so this df has many more rows than the others
 
 
+
 all_hr_road_habitat_df <- readRDS(here("data/all_hr_road_impervious")) %>% 
   data.frame() %>% 
   select(seg.label, animal.id, buff, "mean.imperv" = mean.percent.impervious) %>% 
@@ -23,8 +24,6 @@ all_hr_road_habitat_df <- readRDS(here("data/all_hr_road_impervious")) %>%
 
 
 
-seg_midpoints <- readRDS(here("data/seg_midpoints")) %>% 
-  st_as_sf()
 
 ########## will ultimately compare results from all three filter levels ##########
 # seg_crossing_sums <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_segs_only")) # more strictly filtered crossings
@@ -111,7 +110,7 @@ return(zmods)
 }
 
 
-# checking prediction of num crossings with crossed and unot crossed segments ----
+# checking prediction of num crossings with crossed and not crossed segments 
 raw_dev_scale_mods <- fit_scale_mixed_mods("seg.raw.crossing", "mean.dev")
 raw_dev_scale_mods$aic
 summary(raw_dev_scale_mods$mean.dev60)
@@ -150,7 +149,7 @@ aictab(list(wt_dev_scale_mods$mean.dev60, wt_imperv_scale_mods$mean.imperv30), c
 
 # trying lmm as for bridges_streams
 
-#' fit_scale_mixed_mods
+#' fit_scale_mixed_mods_crossed_not
 #'
 #' @param zcross either seg.raw.crossing or seg.wt.crossing, the average number of crossings per segment per mt lion per month
 #' @param zhab either mean.dev or mean.tre.shr, the mean development or tree+shrub cover within each buffer distance around each segment
@@ -300,61 +299,40 @@ summary(treshr_scale_mods_crossed$mean.tre.shr60)
 
 
 
-# testing landscapemetrics scales ----
-# here testing buffer distances and the scales at which cells are classified as forest or not. landscapemetrics extracted from A15_segment_landscapemetrics.R
 
 
-# checking prediction of crossed vs not crossed ----
+# ADDING SPATIAL AUTOCORRELATION ----
+fit_scale_spatial_mixed_mods_crossed_not_SpAuto <- function(zhab) {
 
-# trying lmm as for bridges_streams
-
-#' fit_landscapemetrics_scale_mixed_mods_crossed_not
-#'
-#' @param zhab either mean.dev or mean.tre.shr, the mean development or tree+shrub cover within each buffer distance around each segment
-#'
-#' @returns list with an element for each model and one for the AIC table comparing all models
-#'
-#' @examples
-fit_landscapemetrics_scale_mixed_mods_crossed_not <- function(zhab) {
-  # Dynamically set the response variable in the formula
-  zmods <- list(
-    "mod30" = glmer(as.formula(paste("crossed.bin ~", zhab, "+ (1|animal.id)")), data = filter(seg_crossing_sums_naive_roads_only_hab, buff == 30), family = "binomial"),
-    "mod60" = glmer(as.formula(paste("crossed.bin ~", zhab, "+ (1|animal.id)")), data = filter(seg_crossing_sums_naive_roads_only_hab, buff == 60), family = "binomial"),
-    "mod90" = glmer(as.formula(paste("crossed.bin ~", zhab, "+ (1|animal.id)")), data = filter(seg_crossing_sums_naive_roads_only_hab, buff == 90), family = "binomial"),
-    "mod120" = glmer(as.formula(paste("crossed.bin ~", zhab, "+ (1|animal.id)")), data = filter(seg_crossing_sums_naive_roads_only_hab, buff == 120), family = "binomial"),
-    "mod150" = glmer(as.formula(paste("crossed.bin ~", zhab, "+ (1|animal.id)")), data = filter(seg_crossing_sums_naive_roads_only_hab, buff == 150), family = "binomial"),
-    "mod180" = glmer(as.formula(paste("crossed.bin ~", zhab, "+ (1|animal.id)")), data = filter(seg_crossing_sums_naive_roads_only_hab, buff == 180), family = "binomial"),
-    "mod210" = glmer(as.formula(paste("crossed.bin ~", zhab, "+ (1|animal.id)")), data = filter(seg_crossing_sums_naive_roads_only_hab, buff == 210), family = "binomial"),
-    "mod240" = glmer(as.formula(paste("crossed.bin ~", zhab, "+ (1|animal.id)")), data = filter(seg_crossing_sums_naive_roads_only_hab, buff == 240), family = "binomial"),
-    "mod270" = glmer(as.formula(paste("crossed.bin ~", zhab, "+ (1|animal.id)")), data = filter(seg_crossing_sums_naive_roads_only_hab, buff == 270), family = "binomial"),
-    "mod300" = glmer(as.formula(paste("crossed.bin ~", zhab, "+ (1|animal.id)")), data = filter(seg_crossing_sums_naive_roads_only_hab, buff == 300), family = "binomial")
-  )
+  # Spatial + random effect logistic model across buffer distances
+  buffers <- seq(30, 300, by = 30)
+  zmods <- list()
   
+  for (b in buffers) {
+    dat <- seg_crossing_sums_naive_roads_only_hab %>% 
+      filter(buff == b) %>%
+      mutate(
+        # Required spatial structure
+        pos = numFactor(x, y),
+        dummy_group = factor("all")
+      )
+    
+    form <- as.formula(paste("crossed.bin ~", zhab, "+ exp(pos + 0 | dummy_group) + (1 | animal.id)"))
+    
+    zmods[[paste0("mod", b)]] <- glmmTMB(
+      formula = form,
+      family = binomial,
+      data = dat
+    )
+  }
   
+  # Label models by variable name and buffer
+  names(zmods) <- paste(zhab, buffers, sep = "")
   
-  names(zmods) <-  paste(zhab, seq(30, 300, length.out = 10), sep = "")
-  
-  
-  zmods$aic <- aictab(zmods, names(zmods)) %>% 
-    data.frame() %>% 
-    mutate(across(c(AICc, Delta_AICc, ModelLik, AICcWt), ~round(., 3)))
+  # Add AICc table
+  zmods$aic <- aictab(zmods, names(zmods)) %>%
+    data.frame() %>%
+    mutate(across(c(AICc, Delta_AICc, ModelLik, AICcWt), ~ round(., 3)))
   
   return(zmods)
-  
 }
-
-
-dev_scale_mods_crossed_not <- fit_scale_mixed_mods_crossed_not("mean.dev")
-dev_scale_mods_crossed_not$aic
-summary(dev_scale_mods_crossed_not$mean.dev90)
-
-
-treshr_scale_mods_crossed_not <- fit_scale_mixed_mods_crossed_not("mean.tre.shr")
-treshr_scale_mods_crossed_not$aic
-summary(treshr_scale_mods_crossed_not$mean.tre.shr300)
-
-
-# 90m buffer best for development and 300m best for tree+shrub cover
-
-
-
