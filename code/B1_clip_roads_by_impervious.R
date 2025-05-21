@@ -243,12 +243,13 @@ imperv80_rast <- ifel(impervious_rast > 80, 1, NA)
 writeRaster(imperv80_rast, filename = here::here("data/shapefiles/predictor_variable_checking/impervious_over80.tif"), filetype = "GTiff", overwrite = TRUE)
 
 
-# identify segments to exclude if they are in this continuous developed area ----
+#### identify segments to exclude if they are in this continuous developed area ----
 
 interior_polygons <- st_read("data/shapefiles/predictor_variable_checking/impervious_patch_interior_polygons_50.shp")
 
 
-segments_in_homeranges <- readRDS(here("data/segments_in_homeranges"))
+segments_in_homeranges <- readRDS(here("data/segments_in_homeranges")) %>% 
+  select(seg.label, "animal.id" = puma, hr_level, seg.length, geometry)
 
 
 
@@ -256,12 +257,27 @@ segments_in_homeranges <- readRDS(here("data/segments_in_homeranges"))
 segments_in_homeranges <- st_transform(segments_in_homeranges, st_crs(interior_polygons))
 
 # Spatial join: assign each road segment to continuous developed area or  not
-hr_segments_out_in_developed <- st_join(segments_in_homeranges, interior_polygons, join = st_within)
+# hr_segments_out_in_developed <- st_join(segments_in_homeranges, interior_polygons, join = st_within) %>% 
+#  mutate(in.continuous.developed = ifelse(is.na(patches), "no", "yes")) %>% 
+#  select(seg.label, animal.id, in.continuous.developed, geometry)
+# this only classifies a segment as in if it is 100% in
 
-hr_segments_out_in_developed <- hr_segments_out_in_developed %>% 
-  mutate(in.continuous.developed = ifelse(is.na(patches), "no", "yes")) %>% 
+
+# this method calculates the proportion of each segment in the continuous developed
+
+hr_segments_prop_in_developed <- st_intersection(segments_in_homeranges, interior_polygons) %>% 
+  mutate(seg.length.in.dev50 = st_length(geometry)) %>% 
   data.frame() %>% 
-  select(seg.label, "animal.id" = puma, in.continuous.developed)
+  select(seg.label, animal.id, seg.length.in.dev50) %>% 
+  group_by(seg.label, animal.id) %>% 
+  summarise(seg.length.in.dev50 = sum(seg.length.in.dev50)) %>% 
+  ungroup() %>% 
+  full_join(segments_in_homeranges) %>% 
+  mutate(seg.length.in.dev50 = as.numeric(seg.length.in.dev50),
+         seg.length.in.dev50 = replace_na(seg.length.in.dev50, 0),
+         prop.seg.in.dev50 = seg.length.in.dev50/as.numeric(seg.length))
 
-saveRDS(hr_segments_out_in_developed, here("data/hr_segments_out_in_developed"))
 
+
+saveRDS(hr_segments_prop_in_developed, here("data/hr_segments_prop_in_developed"))
+st_write(hr_segments_prop_in_developed, "data/shapefiles/predictor_variable_checking/hr_segments_prop_in_developed.shp", delete_layer = TRUE)
