@@ -16,7 +16,7 @@ source(here("code/utilities.R"))
 source(here("code/helper_data.R")) # need for hr_exclude_pumas
 
 
-# the UD rasters need to be "wrapped" in A8_all_roads_in_BBMM_UD.R in order tobe saved as RDS. need to read then unwrap 
+# the UD rasters need to be "wrapped" in A8_all_roads_in_BBMM_UD.R in order to be saved as RDS. need to read then unwrap 
 wrapped_all_ud_rast <- readRDS(here("model_objects/all_ud_rast_1step"))
 all_ud_rast <- lapply(wrapped_all_ud_rast, unwrap)
 rm(wrapped_all_ud_rast)
@@ -32,6 +32,12 @@ napa_sonoma_rds_equal_segs_df <- napa_sonoma_rds_equal_segs %>%
   bind_rows() %>% 
   full_join(readRDS(here("data/seg_midpoints_road_class")))
 
+
+segments_in_combined_homeranges <- readRDS(here("data/segments_in_combined_homeranges"))
+
+ggplot() +
+  geom_sf(data = napa_sonoma_rds_equal_segs_df, linewidth = 3) +
+  geom_sf(data = segments_in_combined_homeranges, color = "red")
 
 # get all equal length road segments that are within the 90% UD for a step ----
 #' get_all_bbmm_equal_segs
@@ -53,7 +59,7 @@ get_all_bbmm_equal_segs <- function(zcrossing.step) {
   
   # clip the road layer to cut down computing time for the main st_intersection below
   road_slicer <- st_bbox(rp)  %>% st_as_sfc()
-  road_slice <- st_intersection(napa_sonoma_rds_equal_segs_df, road_slicer)
+  road_slice <- st_intersection(segments_in_combined_homeranges, road_slicer)
   
   bbmm_road_slice <- road_slice %>% 
     st_as_sf() %>% 
@@ -98,7 +104,7 @@ bbmm_equal_seg_weights <- bbmm_equal_seg_df %>%
   filter(!animal.id %in% hr_exclude_pumas,
          !seg.label %in% p31_exclude_segments,
          !st_is(., c("POINT", "MULTIPOINT"))) %>%  # end up with some point objects, want only lines 
-  select(crossing.step, seg.length, seg.label, class, geometry, bbmm.seg.length, sub.seg.label, animal.id, raw.crossing, bbmm.segment.weight)
+  select(crossing.step, seg.length, seg.label, geometry, bbmm.seg.length, sub.seg.label, animal.id, raw.crossing, bbmm.segment.weight)
 
   
 saveRDS(bbmm_equal_seg_weights, here("data/bbmm_equal_seg_weights"))
