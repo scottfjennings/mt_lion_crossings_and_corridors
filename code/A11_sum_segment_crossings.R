@@ -32,120 +32,36 @@ source(here("code/helper_data.R"))
 
 # load data ----
 
-# need final_cleaned_road_layer objects >500m to filter naive_crossings
-final_cleaned_road_layer <- readRDS(here("data/final_cleaned_road_layer")) %>% 
-  st_transform(crs = 26910)  %>%  # to UTM 10N
-  mutate(road.label = paste(label, leftcity, city.road.num, sep = "_"),
-         road.length = st_length(.)) 
-
-
-# combined home ranges to filter naive_crossings
-combined_puma_homeranges_95 <- st_read(here("data/shapefiles/combined_puma_homeranges_95.shp"))
-
-# use this to check if a segment is part of the naive crossed road
-naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr")) %>% 
-  rename(crossing.step = step.id) %>% 
-  st_transform(crs = 26910) %>% 
-  inner_join(final_cleaned_road_layer %>% 
-              data.frame() %>% 
-              select(road.label, road.length)) %>% 
-  filter(as.numeric(road.length) > 500) %>% 
-  select(geometry, road.label, crossing.step)
-
-
-crossings_in_home_ranges <- naive_crossings[st_intersects(naive_crossings, combined_puma_homeranges_95, sparse = FALSE), ]
-
-
-# all roads inside the BBMM UD for each crossing step
-# all_bbmm_roads <- readRDS(here("model_objects/all_bbmm_roads_1step")) maybe not needed
-
 # crossing step GPS fixes in wide (step) format. from A1_gps_data.R
+# need this to get the naive crossed segments
+# and to add back the year and month of each crossing step
 puma_steps <- readRDS(here("data/puma_steps"))
 
 # the road segments inside each BBMM UD. from A10_BBMM_segment.R
-
 bbmm_equal_seg_weights <- readRDS(here("data/bbmm_equal_seg_weights")) %>% 
   st_transform(crs = 26910) %>%  # to UTM 10N
-  mutate(road.label = sub("_(?:[^_]*)$", "", seg.label)) %>% 
-  select(crossing.step, seg.label, geometry, sub.seg.label, animal.id, bbmm.segment.weight, road.label)
-
+  mutate(road.label = sub("_(?:[^_]*)$", "", seg.label)) 
 
 # raw.crossing = 1 in this df means the segment was inside the BBMM UD for that crossing step
 
-# for mapping through and filtering
-crossing_steps <- bbmm_equal_seg_weights %>% 
+# this is all crossing steps with a valid BBMM UD from A10_BBMM_segments.R
+# use this for mapping through and filtering
+bbmm_steps <- bbmm_equal_seg_weights %>% 
   data.frame() %>% 
   distinct(crossing.step)
 
 
-## temp checking may 2025
-
-
-
-xx = anti_join(naive_crossings, 
-               bbmm_equal_seg_weights %>% 
-                 data.frame() %>% 
-                 select(-geometry))
-
-
-st_write(xx, here("data/shapefiles/predictor_variable_checking/check_naive_xing_bbmm_segs.shp"), append = FALSE)
-
-
-yy = anti_join(bbmm_equal_seg_weights,
-               crossings_in_home_ranges %>% 
-                 data.frame() %>% 
-                 select(-geometry))
-
-
-st_write(xx, here("data/shapefiles/predictor_variable_checking/check_bbmm_segs_naive_xing.shp"), append = FALSE)
-
-
-zz <- full_join(xx %>% data.frame() %>% select(-geometry) %>% mutate(in.xx = TRUE),
-                yy %>% data.frame() %>% select(-geometry) %>% mutate(in.yy = TRUE))
-
-
-
-ggplot() +
-  geom_sf(data = crossings_in_home_ranges, linewidth = 3) +
-  geom_sf(data = bbmm_equal_seg_weights, color = "red")
-
-
-
-ggplot() +
-  geom_sf(data = xx, linewidth = 3) +
-  geom_sf(data = yy, color = "red")
-
-
-########## crossing step filter column 1. how many roads does each crossing step cross? ----
-
-# steps crossing many roads require more complicated assumptions about which road's features are impacting the crossing.
-# analysis will be cleaner using just steps that cross 1 or 2 roads.
-# but this will bias the analysis away from areas with very dense roads so will need to report this.
-
-num_naive_roads <- crossings_in_home_ranges %>%
-  data.frame() %>% 
-  select(-geometry) %>% 
-  right_join(crossing_steps) %>% # just to filter to the steps with valid BBMM UDs
-  distinct(road.label, crossing.step) %>% 
-  group_by(crossing.step) %>% 
-  summarise(num.naive.roads = n())
-
-count(num_naive_roads, num.naive.roads)
-
-num_naive_roads %>% 
-  filter(num.naive.roads > 2) %>% 
-  nrow()
-# only 128 steps have >2 crossings so that is a reasonable number to check manually at some point.
-# most steps only have 1 or 2 crossings. probably fine to just use these in the analysis to avoid complicated steps with more crossings.
-
-##########  crossing step filtering 2. how many times was each segment (not entire roads) naively crossed ----
+# get naive segment crossings. ----
+# until now only have whole road naive crossings, need to redo the spatial intersection to find the naive segment crossings
+# this allows calculating how many times each segment (not entire roads) was naively crossed ----
 
 # segments crossed an even number of times likely were not true crossings; the cat instead likely e.g. went around the outside of a curve.
 
-# first need to redo the intersection of the step and the roads like in A5_naive_crossing.R, but now using the equal length segments instead of final_clean_road_layer
+# first need to redo the intersection of the step and the roads like in A5_naive_road_crossing.R, but now using the equal length segments instead of final_clean_road_layer
 #' get_naive_segment_crossings
 #' 
-#' check which road segments in each BBMM UD were actually crossed by the straight line of the step
+#' check which road segments in each BBMM UD were actually crossed by the straight line of the step. Use the BBMM segments (not larger area) for quicker processing time
+#' 
 #
 #' @param zcrossing.step 
 #'
@@ -169,17 +85,21 @@ get_naive_segment_crossings <- function(zcrossing.step) {
     st_as_sf(coords = c("easting", "northing"), crs = 26910) %>%
     group_by(step.id) %>%
     dplyr::summarize(do_union=FALSE) %>% 
-    st_cast("LINESTRING")   
+    st_cast("LINESTRING") %>% 
+    rename(crossing.step = step.id)
   
   # get all segments that are in this step's BBMM UD
   bbmm_ud_segs <-   bbmm_equal_seg_weights %>% 
-    filter(crossing.step == zcrossing.step)
+    filter(crossing.step == zcrossing.step) %>% 
+    select(sub.seg.label, geometry)
   
   naive_crossed_segs <- st_intersection(crossing_step_line, bbmm_ud_segs) %>%
     rowwise() %>% 
     mutate(geometry = list(st_cast(geometry, "POINT"))) %>% 
     unnest(geometry) %>% 
-    st_as_sf()
+    st_as_sf() %>% 
+    mutate(sub.seg.naive.crossed = 1)
+  
     
   return(naive_crossed_segs)
 }
@@ -187,11 +107,11 @@ get_naive_segment_crossings <- function(zcrossing.step) {
 
 
 system.time(
-naive_crossed_segs_safe <- map(crossing_steps$crossing.step, safely(get_naive_segment_crossings))
+naive_crossed_segs_safe <- map(bbmm_steps$crossing.step, safely(get_naive_segment_crossings))
 ) # 124, 168
-names(naive_crossed_segs_safe) <- crossing_steps$crossing.step
+names(naive_crossed_segs_safe) <- bbmm_steps$crossing.step
 
-# naive_crossings was made on the full final_cleaned_road_layer, so we have some crossings of roads <500m. these errors seem to be from those crossings 
+# the errors are for crossing steps that only crossed roads <500m 
 naive_crossed_segs_error <- map(naive_crossed_segs_safe, "error")[!sapply(map(naive_crossed_segs_safe, "error"), is.null)]
 
 # filter out errors from the results
@@ -202,201 +122,214 @@ naive_crossed_segs_df <- naive_crossed_segs %>%
 
 
 # now calculate how many naive crossings of each naive crossed segment there are. 
-# some segments may have been split into sub-segments if the crossed in and out and back in the BBMM UD
+# some segments may have been split into sub-segments if the segment crossed in and out and back in the BBMM UD
 # the calculated bbmm.segment.weight is for these sub-segments
 # need to sum bbmm.segment.weight for each segment
-num_naive_seg_crossings <- naive_crossed_segs_df %>%
+# but if the same sub segment was crossed >1 time, then simply grouping by (crossing.step, road.label, seg.label) will lead to bbmm.segment.weight.sum values > 1.
+# first need to group_by(crossing.step, road.label, seg.label, sub.seg.label, bbmm.segment.weight) and count raw crossings with a summarize so that each segment has just a single bbmm.segment.weight. including bbmm.segment.weight in the grouping is the way to carry the single weght value for that sub segment forward, while collapsing to a single row for each sub segment
+# then can group_by(crossing.step, road.label, seg.label) and sum the sub segment crossings and sum bbmm.seg.weight
+
+# first add in non-naively crossed sub segments so that num crossings and segment weights can be calculated for all segments in one step (adding up 0s for non-naively crossed sub.seg.naive.crossed isn't all that necessary, but mostly need to add up weights) 
+naive_crossings_all_sub_segs <- naive_crossed_segs_df %>% 
   data.frame() %>% 
   select(-geometry) %>% 
-  right_join(crossing_steps) %>% # just to filter to the steps with valid BBMM UDs
-  group_by(crossing.step, road.label, seg.label) %>% 
-  summarise(num.naive.seg.crossings = n(),
-            bbmm.segment.weight.sum = sum(bbmm.segment.weight)) %>% 
-  ungroup() %>% 
-  filter(!is.na(seg.label))
+  full_join(bbmm_equal_seg_weights %>% 
+              data.frame() %>% 
+              select(-geometry), by = c("crossing.step", "sub.seg.label")) %>% 
+  mutate(sub.seg.naive.crossed = ifelse(is.na(sub.seg.naive.crossed), 0, sub.seg.naive.crossed)) %>% 
+  arrange(crossing.step)
 
-count(num_naive_seg_crossings, num.naive.seg.crossings)
+# first count crossings for each sub segment. 
+num_naive_sub_seg_crossings <- naive_crossings_all_sub_segs %>%
+  group_by(crossing.step, road.label, seg.label, sub.seg.label, bbmm.segment.weight, raw.crossing) %>% 
+  summarise(num.naive.sub.seg.crossings = sum(sub.seg.naive.crossed)) %>%  
+  ungroup()
 
-
-num_naive_road_crossings <- num_naive_seg_crossings %>% 
-  group_by(crossing.step, road.label) %>% 
-  summarise(num.naive.road.crossings = sum(num.naive.seg.crossings)) %>% 
+# then combine sub segments and count crossings for each segment. here we need to sum the sub segment weights (which are confusingly called bbmm.segment.weight even though they are for sub segments)
+num_naive_seg_crossings <- num_naive_sub_seg_crossings %>% 
+  group_by(crossing.step, road.label, seg.label, raw.crossing) %>% 
+  summarise(num.naive.seg.crossings = sum(num.naive.sub.seg.crossings),
+            bbmm.segment.weight = sum(bbmm.segment.weight),
+            num.sub.segs = n()) %>%  
   ungroup()
 
 
-#
+# finally, count crossings for each road. want to maintain a record for each segment, so do mutate for calculation instead of summarise 
+num_naive_seg_road_crossings <- num_naive_seg_crossings %>% 
+  group_by(crossing.step, road.label) %>% 
+  mutate(num.naive.road.crossings = sum(num.naive.seg.crossings),
+            num.segs = n()) %>%  
+  ungroup()
 
+# calculate # of naive roads per crossing step
+num_naive_roads <- num_naive_seg_road_crossings %>% 
+  filter(num.naive.road.crossings > 0) %>% 
+  distinct(crossing.step, road.label) %>% 
+  group_by(crossing.step) %>% 
+  summarise(num.naive.roads = n()) %>% 
+  ungroup()
 
-##########  crossing step filtering 4.  is each segment inside the BBMM UD part of the original naive crossed road? ----
-# will run the analysis with all roads in the BBMM UD and just with the naively crossed road in the BBMM UD
-seg_in_naive_road <- naive_crossings %>% 
-  data.frame() %>% 
-  dplyr::distinct(road.label, crossing.step) %>%
-  mutate(seg.in.naive.road = TRUE) %>% # so far this is just the roads from naive_crossings
-  full_join(bbmm_equal_seg_weights %>% 
-              data.frame() %>% 
-              distinct(crossing.step, road.label, seg.label, raw.crossing)) %>% # now add in all the segments in each BBMM UD
-  arrange(crossing.step)
-
-count(seg_in_naive_road, seg.in.naive.road)
-
-
-# combine the filtering columns and add year and puma ID ----
-
+num_naive_seg_road_crossings_num_roads <- num_naive_seg_road_crossings %>% 
+  full_join(num_naive_roads)
 
 
 
-# get year and animal ID , and months (added 3/17/25)
-pumaid_steps_years_months <- puma_steps %>% 
+# some checking, both of these should be 0 rows
+# this should have 1 row per crossing step and segment.
+count(num_naive_seg_road_crossings_num_roads, crossing.step, seg.label) %>% filter(n>1) %>% nrow()
+# and there can be records with num.naive.seg.crossings > 1, but there should be none with bbmm.segment.weight.sum > 1
+filter(num_naive_seg_road_crossings_num_roads, bbmm.segment.weight > 1) %>% nrow()
+
+filter(num_naive_seg_road_crossings_num_roads, num.naive.road.crossings > 0 & num.naive.roads < num.naive.road.crossings) %>% view()
+
+# and now just look at the number of steps with 1, 2, ...  naive seg crossings
+count(num_naive_seg_road_crossings, num.naive.seg.crossings)
+
+num_naive_seg_road_crossings_num_roads %>% 
+  distinct(crossing.step, road.label, num.naive.road.crossings) %>% 
+  count(num.naive.road.crossings)
+
+# NOTE: num_naive_seg_road_crossings_num_roads HAS A RECORD FOR EACH ROAD SEGMENT IN EACH CROSSING STEP BBMM UD
+# THIS DOES NOT HAVE ANY SEGMENTS THAT WERE OUTSIDE BBMM UDs BUT STILL INSIDE LION HOME RANGES (i.e. the non-crossed segments)
+
+# next need to add month and year for each step, then calculate the monthly number of crossings for each segment
+
+# need the month and year for each step to assign crossings to the correct month/year
+steps_month_years <- readRDS(here("data/puma_steps")) %>%
   mutate(year = year(datetime.local),
          month = month(datetime.local)) %>% 
-  distinct(animal.id, year, month, step.id) %>% 
+  distinct(step.id, year, month) %>% 
   rename(crossing.step = step.id)
 
+# and now add month and year to the summed naive segment and road crossings
+# this still has all the few_crossings_pumas individuals
+num_naive_seg_road_crossings_num_roads_months_years <- num_naive_seg_road_crossings_num_roads %>%
+  left_join(steps_month_years) %>% 
+  animal.id_from_crossing.step()
 
-tallied_steps_crossings <- num_naive_roads %>% 
-  full_join(seg_in_naive_road %>% 
-              data.frame() %>% 
-              select(-geometry)) %>% 
-  full_join(num_naive_road_crossings) %>% 
-  full_join(num_naive_seg_crossings) %>% 
-  left_join(pumaid_steps_years_months)
+# the join above shouldn't add any rows beyond what num_naive_seg_road_crossings_num_roads already had
+nrow(num_naive_seg_road_crossings_num_roads_months_years) == nrow(num_naive_seg_road_crossings_num_roads)
 
-saveRDS(tallied_steps_crossings, here("data/tallied_steps_crossings"))
 
-# can pause here and reload R. only thing from above needed below is tallied_steps_crossings ----
-# tallied_steps_crossings still has crossings aggregated just to the level of the crossing step,
-# below here we aggregate up to the lion-month-segment level
-tallied_steps_crossings <- readRDS(here("data/tallied_steps_crossings"))
+# in num_naive_seg_road_crossings_num_roads_months_years:
+# a segment can have raw.crossing = 1 and have num.naive.seg.crossings == 0, but cannot have num.naive.seg.crossings == 0 and have raw.crossing not = 1.
+# raw.crossing = 1 if a segment was inside the BBMM for that crossing step. this should be 1 for all records
+# IMPORTANT raw.crossing should be used to sum monthly crossings below
+# num.naive.seg.crossings and num.naive.road.crossings should not be used for summing monthly crossings, these fields should just be used for filtering out crossing steps with multiple crossings
+# since raw.crossing is only = 1 or 0 (never >1), bbmm.segment.weight.sum is already the weighted  crossing value for that segment (bbmm.segment.weight.sum * raw.crossing will always be = bbmm.segment.weight.sum)
+# so can simply add up bbmm.segment.weight.sum to sum monthly weighted crossings
 
-# build up an analysis input data frame with a record for each road segment in each mt lion's home range, and the number of crossings per mt lion per month ----
-# from here need to split into multiple tables because mean # crossings calculation will change based on segment filtering
-
-# 1 crossing per rd likely true crossings
-# >1 naive crossings per road the lion  likely went around a bend in the road and we can't be sure how many crossings really happened or which ones are valid
-
-# first need to build up a table with a record for each segment in each mt lion's home range for each year. this is al allow 0-filling for uncrossed roads.
-
-# this has each segment ONCE for each mountain lion, but has many 0-crossed segments and also has segments repeated if they are in multiple home ranges
-homerange_segments <- readRDS(here("data/analysis_inputs/homerange_segments")) %>% 
-  filter(animal.id %in% analysis_pumas,
-         !animal.id %in% hr_exclude_pumas)
-
-# this has multiple segments per lion but no 0-crossed segments
-#seg_crossing_sums_naive_roads_only <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_roads_only")) %>% 
-#  filter(animal.id %in% analysis_pumas,
-#         !animal.id %in% hr_exclude_pumas)
-
-# 1 record for each lion, year, and month. only includes months when there were crossings
-puma_month_years <- tallied_steps_crossings %>% 
-  filter(animal.id %in% analysis_pumas,
-         !animal.id %in% hr_exclude_pumas) %>% 
-  distinct(animal.id, year, month)
-
-# this will be a many-to-many join because each lion X year X month will have many segments, and each segment may be in multiple lion home ranges
-#full_seg_puma_month_year <- hr_seg_midpoints_road_class %>% 
-full_seg_puma_month_year <- homerange_segments %>% 
-  full_join(puma_month_years)
+# in num_naive_seg_road_crossings_num_roads_months_years:
+# num.naive.roads - the number of naively crossed full roads in the BBMM UD
+# seg.in.naive.road - is this segment part of one of the naively crossed roads?
+# raw.crossing - could be named "seg.in.bbmm.ud" but not changing now. should be = 1 for every record in tallied_steps_crossings
+# num.naive.road.crossings - number of naive full road crossings for this full road for this step
+# num.naive.seg.crossings - number of naive segment crossings for this segment for this step
+# bbmm.segment.weight.sum - the proportion of the segment inside this step's BBMM UD
 
 
 
-# then finally filter to just the crossings that will be considered in the analysis
-# and tally the raw and weighted crossings for each segment for each puma in each month, then average monthly crossings for each year
+# next, calculate monthly crossings per segment ----
+# num_naive_seg_road_crossings_num_roads_months_years has fields to filter just naively crossed segments prior to counting monthly crossings
+# but for the current analysis plan I'm counting monthly crossings for the entire naively crossed road
+# could also 
 
-# REMINDER: raw.crossing = 1 for any segment that was inside a BBMM UD
 
-seg_crossing_sums_naive_segs_only <- tallied_steps_crossings %>% 
+# now calculate monthly crossings of just the naively crossed roads. this is the filtering level I'm using in the analysis
+monthly_seg_crossings_naive_roads_only <- num_naive_seg_road_crossings_num_roads_months_years %>% 
   filter(num.naive.roads < 3, # just want steps that crossed 1 or 2 roads 
-         num.naive.seg.crossings == 1, # and for ...naive_segs_only just want naively crossed segments, and only want segments that were crossed once per step
-         seg.in.naive.road == TRUE) %>% # shouldn't need seg.in.naive.road == TRUE with other filtering fields, but including to be extra sure 
+         num.naive.road.crossings == 1) %>%  # and only want roads that were crossed once per step
   group_by(animal.id, year, month, seg.label) %>% 
-  mutate(seg.raw.crossing = sum(num.naive.seg.crossings),
-         seg.wt.crossing = sum(bbmm.segment.weight * num.naive.seg.crossings),
-         num.crossing.steps = n(),
-         which.steps = paste(crossing.step, collapse = "; ")) %>% 
-  ungroup() %>% 
-  full_join(full_seg_puma_month_year) %>% # add this for 0-filling. joining them results in more records than either has
-  mutate(seg.raw.crossing = replace_na(seg.raw.crossing, 0),
-         seg.wt.crossing = replace_na(seg.wt.crossing, 0),
+  summarise(monthly.seg.raw.crossing = sum(raw.crossing), # not sum(num.naive.seg.crossings)
+            monthly.seg.wt.crossing = sum(bbmm.segment.weight), # not sum(wt.naive.seg.crossings)
+            num.crossing.steps = n(), # including num.crossing.steps and which.steps for checking, these aren't actually needed for the analysis
+            which.steps = paste(crossing.step, collapse = "; ")
+  ) %>% 
+  ungroup() 
+
+
+# to analyze just naively crossed segments, do the same as above but filter num.naive.seg.crossings == 1 instead of num.naive.road.crossings
+
+
+# next need to add all the non-crossed segments for each lion each month
+# build up df with a record for each segment in each lion's home range for each month that there were crossings by that lion
+# this will be a many-to-many join because each lion X year X month will have many segments, and each segment may be in multiple lion home ranges
+# segments_in_homeranges has only the 12 main analysis lions
+seg_hr <- readRDS(here("data/segments_in_homeranges")) %>% 
+  mutate(animal.id = puma) %>% 
+  data.frame() %>% 
+  distinct(animal.id, seg.label)
+
+
+puma_month_year <- steps_month_years %>% 
+  animal.id_from_crossing.step() %>% 
+  distinct(animal.id, month, year)
+
+full_seg_puma_month_year <- puma_month_year %>% 
+  full_join(seg_hr) %>% 
+  filter(animal.id %in% analysis_pumas, 
+         !animal.id %in% few_crossings_pumas) %>% 
+  mutate(expected.seg = 1)
+
+
+# seg_crossing_sums_naive_roads_only has some segments for lions outside that lion's 95% home range because bbmm_equal_seg_weights is created from segments inside the combined home range polygon
+# segments_in_homeranges has just the segments inside each lion's 95% home range, so use right join below to filter out segments between the 95 and 99% contours for each lion
+monthly_seg_crossings_naive_roads_only_0s <- monthly_seg_crossings_naive_roads_only %>% 
+  filter(animal.id %in% analysis_pumas, 
+         !animal.id %in% few_crossings_pumas) %>% 
+  right_join(full_seg_puma_month_year) %>% # now adding all segments for each lion for each month to get 0-crossed segments
+  mutate(monthly.seg.raw.crossing = replace_na(monthly.seg.raw.crossing, 0),
+         monthly.seg.wt.crossing = replace_na(monthly.seg.wt.crossing, 0),
          num.crossing.steps = replace_na(num.crossing.steps, 0)) %>% 
   arrange(animal.id, year, month, seg.label) %>% 
-  select(animal.id, year, month, seg.label, bbmm.segment.weight, num.naive.seg.crossings, which.steps, seg.wt.crossing, seg.raw.crossing, num.crossing.steps)
+  select(animal.id, year, month, seg.label, which.steps, monthly.seg.wt.crossing, monthly.seg.raw.crossing, num.crossing.steps, expected.seg)
 
 
-saveRDS(seg_crossing_sums_naive_segs_only, here("data/analysis_inputs/seg_crossing_sums_naive_segs_only"))
+# check numbers
+month_years_per_lion <- distinct(puma_month_year, animal.id, month, year) %>% count(animal.id) %>% rename(num.month.years = n)
+segs_per_lion <- seg_hr %>% count(animal.id) %>% rename(num.segs = n)
 
-  
-seg_crossing_sums_naive_roads_only <- tallied_steps_crossings %>% 
-  filter(num.naive.roads < 3, num.naive.seg.crossings == 1, seg.in.naive.road == TRUE) %>% # shouldn't need seg.in.naive.road == TRUE with other filtering fields, but including to be extra sure
-  group_by(animal.id, year, month, seg.label, class) %>% 
-  summarise(seg.raw.crossing = sum(raw.crossing),
-            seg.wt.crossing = sum(bbmm.segment.weight)) %>% 
-  ungroup()%>% 
-  full_join(full_seg_puma_month_year) %>% # joinging them results in more records than either has
-  mutate(seg.raw.crossing = replace_na(seg.raw.crossing, 0),
-         seg.wt.crossing = replace_na(seg.wt.crossing, 0))
-
-
-saveRDS(seg_crossing_sums_naive_roads_only, here("data/analysis_inputs/seg_crossing_sums_naive_roads_only"))
-seg_crossing_sums_naive_roads_only <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_roads_only"))
-
-
-seg_crossing_sums_all_bbmm <- tallied_steps_crossings %>% 
-  filter(num.naive.roads < 3) %>% 
-  group_by(animal.id, year, month, seg.label, seg.in.naive.road) %>% 
-  summarise(seg.raw.crossing = sum(raw.crossing),
-            seg.wt.crossing = sum(bbmm.segment.weight)) %>% 
-  ungroup()%>% 
-  full_join(full_seg_puma_month_year) %>% # joinging them results in more records than either has
-  mutate(seg.raw.crossing = replace_na(seg.raw.crossing, 0),
-         seg.wt.crossing = replace_na(seg.wt.crossing, 0))
+# in this df,all expected/calc and actual pairs should match
+full_join(month_years_per_lion, segs_per_lion) %>% 
+  filter(animal.id %in% analysis_pumas, 
+         !animal.id %in% few_crossings_pumas) %>% 
+  mutate(lion.expected.month.segs = num.month.years * num.segs,
+         total.expected.month.segs = sum(lion.expected.month.segs)) %>% 
+  full_join(count(full_seg_puma_month_year, animal.id) %>% rename(calc.month.segs = n)) %>% 
+  full_join(full_seg_puma_month_year %>% distinct(animal.id, month, year) %>% count(animal.id) %>% rename(calc.month.years = n)) %>% 
+  full_join(full_seg_puma_month_year %>% distinct(animal.id, seg.label) %>% count(animal.id) %>% rename(calc.segs = n)) %>% 
+  full_join(count(monthly_seg_crossings_naive_roads_only_0s, animal.id) %>% rename(actual.lion.month.segs = n)) %>% 
+  full_join(monthly_seg_crossings_naive_roads_only_0s %>% distinct(animal.id, month, year) %>% count(animal.id) %>% rename(actual.month.years = n)) %>% 
+  full_join(monthly_seg_crossings_naive_roads_only_0s %>% distinct(animal.id, seg.label) %>% count(animal.id) %>% rename(actual.segs = n)) %>% 
+  select(animal.id, contains("month.years"), num.segs, calc.segs, actual.segs, lion.expected.month.segs, actual.lion.month.segs, calc.month.segs, total.expected.month.segs) %>% 
+  mutate(total.actual.month.segs = nrow(seg_crossing_sums_naive_roads_only_0s))
 
 
-count(seg_crossing_sums_all_bbmm, animal.id, year) %>% 
-  pivot_wider(id_cols = animal.id, names_from = year, values_from = n)
-# very few segments for P12, P24, P25
-
-saveRDS(seg_crossing_sums_all_bbmm, here("data/analysis_inputs/seg_crossing_sums_all_bbmm"))
 
 
-# also tally all crossings across all lions and save as SHP 
 
 
-tallied_steps_crossings <- readRDS(here("data/tallied_steps_crossings"))
-# filter(tallied_steps_crossings, crossing.step == "P16_37473_46440", seg.label == "Trinity Rd_Glen Ellen_1_3")
+# if they do, save 
 
-seg_geometries <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
-  bind_rows() %>% 
-  distinct(seg.label, geometry)
-  
-# this is the raw sum of all crossings, not scaled for how long each lion was collared
-all_lions_years_seg_crossing_sums_naive_roads_only <- tallied_steps_crossings %>% 
-  filter(num.naive.roads < 3, num.naive.road.crossings == 1) %>% 
-  group_by(seg.label, class) %>% 
-  summarise(seg.raw.crossing = sum(raw.crossing),
-            seg.wt.crossing = sum(bbmm.segment.weight)) %>% 
-  ungroup() %>% 
-  full_join(full_seg_puma_month_year) %>% # joinging them results in more records than either has
-  mutate(seg.raw.crossing = replace_na(seg.raw.crossing, 0),
-         seg.wt.crossing = replace_na(seg.wt.crossing, 0)) %>% 
-  left_join(seg_geometries)
+saveRDS(monthly_seg_crossings_naive_roads_only_0s, here("data/analysis_inputs/monthly_seg_crossings_naive_roads_only_0s"))
 
 
-st_write(all_lions_years_seg_crossing_sums_naive_roads_only, here("data/shapefiles/all_lions_years_seg_crossing_sums_naive_roads_only.shp"), append = FALSE)
+
+
 
 
 # this is scaled to the average crossings per month across all lions, and also has the number of different lions using each segment
 
 
-seg_crossing_sums_naive_roads_only <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_roads_only"))
+monthly_seg_crossings_naive_roads_only_0s <- readRDS(here("data/analysis_inputs/monthly_seg_crossings_naive_roads_only_0s"))
 
-monthly_mean <- seg_crossing_sums_naive_roads_only %>% 
+monthly_mean <- monthly_seg_crossings_naive_roads_only_0s %>% 
   group_by(seg.label) %>% 
-  summarise(mean.seg.raw.crossing = mean(seg.raw.crossing),
-            mean.seg.wt.crossing = mean(seg.wt.crossing)) %>% 
+  summarise(mean.monthly.seg.raw.crossing = mean(monthly.seg.raw.crossing),
+            mean.monthly.seg.wt.crossing = mean(monthly.seg.wt.crossing)) %>% 
   ungroup()
 
-tot_lions <- seg_crossing_sums_naive_roads_only %>% 
+tot_lions <- monthly_seg_crossings_naive_roads_only_0s %>% 
   filter(seg.raw.crossing > 0) %>% 
   distinct(animal.id, seg.label) %>% 
   group_by(seg.label) %>% 
@@ -410,9 +343,6 @@ monthly_mean_tot_lions <- full_join(monthly_mean, tot_lions) %>%
 
 
 monthly_mean_tot_lions %>% 
-  st_write(here("data/shapefiles/monthly_mean_tot_lions.shp"), append = FALSE)
-
-monthly_mean_tot_lions %>% 
   filter(mean.seg.raw.crossing > 0) %>% 
   st_write(here("data/shapefiles/monthly_mean_tot_lions.shp"), append = FALSE)
 
@@ -420,23 +350,3 @@ monthly_mean_tot_lions %>%
 monthly_mean_tot_lions %>% 
   filter(mean.seg.raw.crossing == 0) %>% 
   st_write(here("data/shapefiles/not_crossed_segs.shp"), append = FALSE)
-
-
-# some checking for number of records:
-# should now be just 1 record for each segment, mt lion, year, month
-count(seg_crossing_sums, seg.label, animal.id, year, month) %>% filter(n > 1) %>% nrow()
-# if nrow = 0, good
-count(seg_crossing_sums, animal.id, year, month) %>% nrow()
-# should still be = nrow(puma_month_years)
-
-saveRDS(seg_crossing_sums, here("data/analysis_inputs/seg_crossing_sums"))
-
-seg_crossing_monthly_means <- seg_crossing_sums %>% 
-  group_by(animal.id, seg.label) %>% 
-  summarise(mean.seg.raw.crossing = mean(seg.raw.crossing),
-            mean.seg.wt.crossing = mean(seg.wt.crossing)) %>% 
-  ungroup()
-
-saveRDS(seg_crossing_monthly_means, here("data/analysis_inputs/seg_crossing_monthly_means"))
-
-
