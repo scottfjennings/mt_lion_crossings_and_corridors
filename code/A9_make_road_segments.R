@@ -239,7 +239,13 @@ combined_puma_homeranges_95 <- st_read(here("data/shapefiles/combined_puma_homer
 napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(combined_puma_homeranges_95))
 
 # Spatial join: assign each road segment to overlapping home range
+# st_intersects to retain segments partially within the homeranges
+# st_within retains segments that are totally within homeranges
+# for the combined homerange polygon it doesn't make a difference
+# segments_in_combined_homeranges <- st_join(napa_sonoma_rds_equal_segs, combined_puma_homeranges_95, join = st_intersects)
 segments_in_combined_homeranges <- st_join(napa_sonoma_rds_equal_segs, combined_puma_homeranges_95, join = st_within)
+
+
 
 # Optional: filter out segments not within any homerange
 segments_in_combined_homeranges <- segments_in_combined_homeranges %>% filter(!is.na(FID))
