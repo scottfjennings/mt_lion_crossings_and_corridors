@@ -37,7 +37,138 @@ combined_puma_homeranges_95 <- st_read(here("data/shapefiles/combined_puma_homer
 # this is to filter the habitat raster to speed processing time when extracting values around each road segment. need the 300 m buffer to get all the habitat for segments that are right on the homerange edge.
 hab_masker <- st_buffer(combined_puma_homeranges_95, 300)
 
-# TRE layer only ----
+# functions to calculate various landscape metrics for each segment across various scales ----
+
+# I tested a number of landscape metrics available through the landscapemetrics package
+# eventually settled on cohesion as the one that best represented what Quinton thinks is important about landscape configuration: "mini-corridors" crossing open country that allow lions to move through road areas
+# the cohesion function is first, functions below line 140 are retained for posterity
+
+
+
+# calculate patch cohesion ----
+#' Title
+#'
+#' @param zyear 
+#'
+#' @returns
+#' @details
+#' calculating cohesion at 3 buffer distances around segments and 3 thresholds for classifying a cell as tree+shrub.
+#' spatial scale: because cohesion is calculated across multiple cells, doesn't add much information to calculate it at 30m intervals moving out from roads, just using 100, 200, 300
+#' woody plant threshold: this is the % cover threshold for classifying a raster cell as woody or not. cohesion is calculated based on 1 vs 0 classification of each cell, not on the original % cover of the veg type of interest. currently calculating at 25, 50, 75%
+#' 
+#'
+#' @examples
+get_hr_road_patch_cohesion_treshr <- function(zyear) {
+  thresholds <- c(25, 50, 75)
+  buffers <- c(100, 200, 300)
+  
+  # Load and process habitat raster
+  zhab <- terra::rast(paste0(
+    "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/",
+    "Harvey_north bay habitat/RSF_Layers_", zyear, "_2024-03-19.TIF"
+  ))
+  
+  # Create summed TRE + SHR layer
+  tre_layer <- zhab[["TRE"]]
+  shr_layer <- zhab[["SHR"]]
+  sum_layer <- tre_layer + shr_layer
+  
+  process_layer <- function(layer, name_suffix) {
+    rast_cropped <- terra::crop(layer, hab_masker)
+    rast_proj <- terra::project(rast_cropped, "EPSG:26910")
+    hr_hab <- terra::mask(rast_proj, hab_masker)
+    
+    binary_forest_list <- lapply(thresholds, function(thresh) terra::classify(hr_hab > thresh, cbind(TRUE, 1), others = 0))
+    names(binary_forest_list) <- as.character(thresholds)
+    
+    
+    combos <- expand.grid(buff = buffers, forest.threshold = thresholds)
+    
+    results <- purrr::map_dfr(1:nrow(combos), function(i) {
+      buff_dist <- combos$buff[i]
+      threshold <- combos$forest.threshold[i]
+      
+      forest_binary <- binary_forest_list[[as.character(threshold)]]
+      
+      road_vect <- terra::vect(segments_in_combined_homeranges)
+      road_buffer <- terra::buffer(road_vect, width = buff_dist)
+      road_buffer_sf <- sf::st_as_sf(road_buffer)
+      road_buffer_sf$seg.label <- segments_in_combined_homeranges$seg.label
+      
+      buffer_metrics <- purrr::map_dfr(1:nrow(road_buffer_sf), function(j) {
+        one_buf <- road_buffer_sf[j, ]
+        one_vect <- terra::vect(one_buf)
+        bin_crop <- terra::crop(forest_binary, one_vect)
+        bin_mask <- terra::mask(bin_crop, one_vect)
+        
+        cohesion_val <- tryCatch({
+          landscapemetrics::lsm_c_cohesion(bin_mask) %>%
+            dplyr::rename("cohesion" = value) %>%
+            dplyr::select(class, cohesion)
+        }, error = function(e) tibble::tibble(class = NA, cohesion = NA))
+        
+        
+        cohesion_val %>%
+          dplyr::mutate(
+            seg.label = one_buf$seg.label,
+            buff = buff_dist,
+            forest.threshold = threshold,
+            layer = name_suffix
+          )
+      })
+      
+      dplyr::left_join(segments_in_combined_homeranges, buffer_metrics, by = c("seg.label")) %>%
+        dplyr::filter(!is.na(buff))
+    })
+    
+    return(results)
+  }
+  
+  # Run for TRE and TRE+SHR
+  res_tre <- process_layer(tre_layer, "TRE")
+  res_sum <- process_layer(sum_layer, "TRE+SHR")
+  
+  results <- dplyr::bind_rows(res_tre, res_sum) %>%
+    dplyr::mutate(year = zyear) %>%
+    sf::st_as_sf()
+  
+  return(results)
+}
+
+
+system.time(
+  zz <- get_hr_road_patch_cohesion_treshr(2017)
+)
+
+
+system.time(
+  all_hr_road_patch_cohesion_treshr  <- map_df(seq(2016, 2023), get_hr_road_patch_cohesion_treshr)
+) 
+
+saveRDS(all_hr_road_patch_cohesion_treshr, here("data/all_hr_road_patch_cohesion_treshr"))
+
+
+
+###############################################################################
+
+################# as of June 2025, only run to here ###########################
+
+###############################################################################
+
+###############################################################################
+
+###############################################################################
+
+
+#' get_hr_road_landmetrics_tre
+#' 
+#' calculates lsm_c_ai, lsm_p_shape, lsm_p_para, and lsm_p_circle tree rasters for each segment at each of 3 scales and 3 % thresholds for classifying a raster cell as tree
+#'
+#' @param zyear 
+#'
+#' @returns
+#'
+#' @examples
 get_hr_road_landmetrics_tre <- function(zyear) {
   thresholds <- c(25, 50, 75)
   buffers <- c(100, 200, 300)
@@ -124,7 +255,17 @@ zz %>%
 
 
 
-# TRE and TRE + SHR ----
+#' get_hr_road_landmetrics_treshr ----
+#'
+#' calculates lsm_c_ai, lsm_p_shape, lsm_p_para, and lsm_p_circle tree and tree+shrub rasters for each segment at each of 3 scales and 3 % thresholds for classifying a raster cell as tree or tree+shrub
+#' 
+#' 
+#' @param zyear 
+#'
+#' @returns
+#' @export
+#'
+#' @examples
 get_hr_road_landmetrics_treshr <- function(zyear) {
   thresholds <- c(25, 50, 75)
   buffers <- c(100, 200, 300)
@@ -251,96 +392,6 @@ all_hr_road_landmetrics_treshr_summ %>%
 
 
 
-
-# calculate patch cohesion ----
-get_hr_road_patch_cohesion_treshr <- function(zyear) {
-  thresholds <- c(25, 50, 75)
-  buffers <- c(100, 200, 300)
-  
-  # Load and process habitat raster
-  zhab <- terra::rast(paste0(
-    "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/",
-    "Harvey_north bay habitat/RSF_Layers_", zyear, "_2024-03-19.TIF"
-  ))
-  
-  # Create summed TRE + SHR layer
-  tre_layer <- zhab[["TRE"]]
-  shr_layer <- zhab[["SHR"]]
-  sum_layer <- tre_layer + shr_layer
-  
-  process_layer <- function(layer, name_suffix) {
-    rast_cropped <- terra::crop(layer, hab_masker)
-    rast_proj <- terra::project(rast_cropped, "EPSG:26910")
-    hr_hab <- terra::mask(rast_proj, hab_masker)
-    
-    binary_forest_list <- lapply(thresholds, function(thresh) terra::classify(hr_hab > thresh, cbind(TRUE, 1), others = 0))
-    names(binary_forest_list) <- as.character(thresholds)
-    
-    
-    combos <- expand.grid(buff = buffers, forest.threshold = thresholds)
-    
-    results <- purrr::map_dfr(1:nrow(combos), function(i) {
-      buff_dist <- combos$buff[i]
-      threshold <- combos$forest.threshold[i]
-      
-      forest_binary <- binary_forest_list[[as.character(threshold)]]
-      
-      road_vect <- terra::vect(segments_in_combined_homeranges)
-      road_buffer <- terra::buffer(road_vect, width = buff_dist)
-      road_buffer_sf <- sf::st_as_sf(road_buffer)
-      road_buffer_sf$seg.label <- segments_in_combined_homeranges$seg.label
-      
-      buffer_metrics <- purrr::map_dfr(1:nrow(road_buffer_sf), function(j) {
-        one_buf <- road_buffer_sf[j, ]
-        one_vect <- terra::vect(one_buf)
-        bin_crop <- terra::crop(forest_binary, one_vect)
-        bin_mask <- terra::mask(bin_crop, one_vect)
-        
-        cohesion_val <- tryCatch({
-          landscapemetrics::lsm_c_cohesion(bin_mask) %>%
-            dplyr::rename("cohesion" = value) %>%
-            dplyr::select(class, cohesion)
-        }, error = function(e) tibble::tibble(class = NA, cohesion = NA))
-        
-        
-        cohesion_val %>%
-          dplyr::mutate(
-            seg.label = one_buf$seg.label,
-            buff = buff_dist,
-            forest.threshold = threshold,
-            layer = name_suffix
-          )
-      })
-      
-      dplyr::left_join(segments_in_combined_homeranges, buffer_metrics, by = c("seg.label")) %>%
-        dplyr::filter(!is.na(buff))
-    })
-    
-    return(results)
-  }
-  
-  # Run for TRE and TRE+SHR
-  res_tre <- process_layer(tre_layer, "TRE")
-  res_sum <- process_layer(sum_layer, "TRE+SHR")
-  
-  results <- dplyr::bind_rows(res_tre, res_sum) %>%
-    dplyr::mutate(year = zyear) %>%
-    sf::st_as_sf()
-  
-  return(results)
-}
-
-
-system.time(
-  zz <- get_hr_road_patch_cohesion_treshr(2017)
-)
-
-
-system.time(
-  all_hr_road_patch_cohesion_treshr  <- map_df(seq(2016, 2023), get_hr_road_patch_cohesion_treshr)
-) 
-
-saveRDS(all_hr_road_patch_cohesion_treshr, here("data/all_hr_road_patch_cohesion_treshr"))
 
 
 all_hr_road_patch_cohesion_treshr %>% 
