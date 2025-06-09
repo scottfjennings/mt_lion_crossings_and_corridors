@@ -8,70 +8,157 @@ library(AICcmodavg)
 options(scipen = 999)
 source(here("code/helper_data.R"))
 
-# read the road segment habitat values masked to each puma's home range
-# this has a row for each road segment in each animal's home range, for each year the puma was tracked and each buffer distance (30-300, by 30)
+# read the road segment habitat values from A12_segment_habitat.R
+# this has a row for each road segment in the combined 95% home range polygon, for each year and each buffer distance (30-300, by 30)
 # so this df has many more rows than the others
-
-
-
-all_hr_road_habitat_df <- readRDS(here("data/all_hr_road_impervious")) %>% 
+# it also has 
+all_hr_road_habitat_95 <- readRDS(here("data/all_hr_road_habitat_95")) %>%
   data.frame() %>% 
-  select(seg.label, animal.id, buff, "mean.imperv" = mean.percent.impervious) %>% 
-  full_join(readRDS(here("data/analysis_inputs/all_hr_road_habitat_df"))) %>% 
-  filter(!animal.id %in% hr_exclude_pumas,
-         !seg.label %in% p31_exclude_segments) %>% 
-  mutate(mean.imperv = mean.imperv/100)
+  select(seg.label, mean.tre.shr, mean.dev, year, buff)
 
 
+# read segments assigned to correct individual lion's home range from A9_make_road_segments.R
+# this is already filtered to the final (as of May 2025) lions, but including the filtering here again for consistency
+#segments_in_homeranges <- readRDS(here("data/segments_in_combined_homeranges")) %>%
+#  data.frame() %>% 
+#  select(seg.label, puma)   %>% 
+#  filter(animal.id %in% analysis_pumas,
+#         !animal.id %in% few_crossings_pumas,
+#         !animal.id %in% hr_exclude_pumas,
+#         !seg.label %in% p31_exclude_segments)
 
 
-########## will ultimately compare results from all three filter levels ##########
+# read df with the proportion of each segment in continuous areas of moderate or high development, from B1_clip_roads_by_impervious.R
+hr_segments_prop_in_developed <- readRDS(here("data/hr_segments_prop_in_developed")) %>% 
+              data.frame() %>% 
+              select(-geometry, -seg.length.in.dev50, -seg.length)   %>% 
+  filter(animal.id %in% analysis_pumas,
+         !animal.id %in% few_crossings_pumas,
+         !animal.id %in% hr_exclude_pumas,
+         !seg.label %in% p31_exclude_segments)
+
+
+# read segment crossing values from A11_sum_segment_crossings.R
+########## will ultimately compare results from all three filter levels 
 # seg_crossing_sums <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_segs_only")) # more strictly filtered crossings
-seg_crossing_sums_naive_roads_only <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_roads_only")) %>% 
-  filter(!animal.id %in% hr_exclude_pumas)
+# this has just the lion X months that there is real data for
+ 
+monthly_seg_crossings_naive_roads_only_0s <- readRDS(here("data/analysis_inputs/monthly_seg_crossings_naive_roads_only_0s")) %>% 
+  select(animal.id, year, month, seg.label, which.steps, monthly.seg.wt.crossing, monthly.seg.raw.crossing)
 
 
-seg_crossing_sums_naive_roads_only_hab <- all_hr_road_habitat_df %>% 
-  full_join(seg_crossing_sums_naive_roads_only) %>% 
-  mutate(crossed.bin = as.numeric(seg.wt.crossing > 0)) %>% 
-  filter(!animal.id %in% few_crossings_pumas) %>% 
-  left_join(seg_midpoints) %>% 
-  st_as_sf()
 
+#puma_years <- seg_crossing_sums_naive_roads_only %>% 
+#  distinct(animal.id, year)
+
+# adding hr_segments_prop_in_developed shouldn't change the number of rows since it is derived from segments_in_homerange
+composition_scale_df_pre <- monthly_seg_crossings_naive_roads_only_0s %>% 
+  full_join(hr_segments_prop_in_developed)
+
+
+# all_hr_road_habitat_95 has habitat values for some invalid puma X segment X year combinations
+# need to use left_join(all_hr_road_habitat_95) to ensure just valid puma X segment X year combinations
+# this is an expected many-to-many join because each segment may show up multiple times per year (in different months for same lion and in different lions HR) AND all_hr_road_habitat_95 has habitat at 10 spatial scales for each segment.
+composition_scale_df <- composition_scale_df_pre %>% 
+  left_join(all_hr_road_habitat_95) %>% 
+  filter(prop.seg.in.dev50 > 0) # remove segments that are in continuous developed areas
+
+# nrow(composition_scale_df) should be nrow(composition_scale_df_pre) * 10
+# checking to make sure nothing got changed
+all(distinct(composition_scale_df, animal.id, year) %>% count(animal.id) == 
+      distinct(composition_scale_df_pre, animal.id, year) %>% count(animal.id))
+
+all(distinct(composition_scale_df, animal.id, year, seg.label) %>% count(animal.id, year) == 
+      distinct(composition_scale_df_pre, animal.id, year, seg.label) %>% count(animal.id, year))
+
+all(distinct(composition_scale_df, animal.id, year, buff) %>% count(animal.id) %>% mutate(n = n/10) == 
+      distinct(composition_scale_df_pre, animal.id, year) %>% count(animal.id))
+# all 3 should be all true because adding all_hr_road_habitat_95 should just add the habitat values at the 10 buffers for each lion X segment X year that exists in composition_scale_df
 
 # couple plots to check data ----
-all_hr_road_habitat_df %>%
-  select(year, seg.label, animal.id, buff, mean.tre.shr) %>% 
+
+all_hr_road_habitat_95 %>% 
+  select(year, seg.label, buff, mean.dev) %>% 
   mutate(buff = paste("b", buff, sep = "_")) %>% 
-  pivot_wider(id_cols = c(year, animal.id, seg.label), names_from = buff, values_from = mean.tre.shr)%>% 
-  select(-animal.id, -year, -seg.label) %>% 
+  pivot_wider(id_cols = c(year, seg.label), names_from = buff, values_from = mean.dev)%>% 
+  select(-year, -seg.label) %>% 
   plot()
 
-all_hr_road_habitat_df %>% 
-  select(year, seg.label, animal.id, buff, mean.dev) %>% 
-  mutate(buff = paste("b", buff, sep = "_")) %>% 
-  pivot_wider(id_cols = c(year, animal.id, seg.label), names_from = buff, values_from = mean.dev)%>% 
-  select(-animal.id, -year, -seg.label) %>% 
-  plot()
-
-
-all_hr_road_habitat_df %>% 
-  distinct(year, seg.label, buff, mean.dev, mean.imperv) %>% 
-  ggplot() +
-  geom_point(aes(x = mean.dev, y = mean.imperv/100)) +
-  geom_abline() +
-  facet_wrap(~buff)
 
 
 # similar distance buffers have more similar values of mean.tre.shr and mean.dev, although this is stronger for mean.tre.shr 
 
-# read the summed segment crossings
-# for now using the moderately filtered crossings, those that consider only the naively crossed road within the BBMM
+
+# modeling to select the best scale for both landscape composition predictors
+
+#' fit_scale_mixed_mods
+#'
+#' @param zcross either seg.raw.crossing or seg.wt.crossing, the average number of crossings per segment per mt lion per month
+#' @param zhab either mean.dev or mean.tre.shr, the mean development or tree+shrub cover within each buffer distance around each segment
+#'
+#' @returns list with an element for each model and one for the AIC table comparing all models
+#' 
+#' 
+#' @details
+#' this function uses the summed monthly segment proportion as an offset, with the summed raw crossing values (=1 for each time a segment was inside a BBMM UD) as the response variable. the advantage of the offset, vs using the summed proportions as a scaled crossing value, is that is weights the importance of the predictor variables while keeping the response on a scale that works properly for Poiss or NB error distribution. 
+#' 
+#'
+#' @examples
+fit_scale_mixed_mods_offset <- function(zhab) {
+  scales <- seq(30, 300, by = 30)
+  
+  zmods <- lapply(scales, function(s) {
+    df_scale <- dplyr::filter(composition_scale_df, buff == s)
+    glmer(
+      formula = as.formula(paste0(
+        "monthly.seg.raw.crossing ~ ", zhab,
+        " + offset(log(monthly.seg.wt.crossing + 0.0001)) + (1|animal.id)"
+      )),
+      data = df_scale,
+      family = poisson
+    )
+  })
+  
+  names(zmods) <- paste(zhab, scales, sep = "")
+  
+  zmods$aic <- aictab(zmods, names(zmods)) %>%
+    data.frame() %>%
+    dplyr::mutate(across(c(AICc, Delta_AICc, ModelLik, AICcWt), \(x) round(x, 3)))
+  
+  return(zmods)
+}
 
 
-#
-# for summed crossings; selecting the best spatial scale for each predictor ----
-# trying lmm as for bridges_streams
+
+
+dev_scale_mods_offset <- fit_scale_mixed_mods_offset("mean.dev")
+dev_scale_mods_offset$aic
+summary(dev_scale_mods_offset$mean.dev30)
+# 30m best for mean.dev (june 2025)
+
+
+
+treshr_scale_mods_offset <- fit_scale_mixed_mods_offset("mean.tre.shr")
+treshr_scale_mods_offset$aic
+summary(treshr_scale_mods_offset$mean.tre.shr120)
+
+# 120m best (barely) for tre.shr (june 2025)
+# but really, all scales are approximately equally supported: max aic wt = .111, min = 0.089 with dAICc = 0.455
+# going to use use 30m and 300m in analysis to allow possible new relative importance to emerge when other varbs are added.
+
+
+###############################################################################
+
+################# as of June 2025, only run to here ###########################
+
+###############################################################################
+
+###############################################################################
+
+###############################################################################
+
+
+# trying lmm as for bridges_streams ----
 
 #' fit_scale_mixed_mods
 #'
