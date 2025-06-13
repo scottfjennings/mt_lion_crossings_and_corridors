@@ -17,17 +17,6 @@ all_hr_road_habitat_95 <- readRDS(here("data/all_hr_road_habitat_95")) %>%
   select(seg.label, mean.tre.shr, mean.dev, year, buff)
 
 
-# read segments assigned to correct individual lion's home range from A9_make_road_segments.R
-# this is already filtered to the final (as of May 2025) lions, but including the filtering here again for consistency
-#segments_in_homeranges <- readRDS(here("data/segments_in_combined_homeranges")) %>%
-#  data.frame() %>% 
-#  select(seg.label, puma)   %>% 
-#  filter(animal.id %in% analysis_pumas,
-#         !animal.id %in% few_crossings_pumas,
-#         !animal.id %in% hr_exclude_pumas,
-#         !seg.label %in% p31_exclude_segments)
-
-
 # read df with the proportion of each segment in continuous areas of moderate or high development, from B1_clip_roads_by_impervious.R
 hr_segments_prop_in_developed <- readRDS(here("data/hr_segments_prop_in_developed")) %>% 
               data.frame() %>% 
@@ -39,13 +28,15 @@ hr_segments_prop_in_developed <- readRDS(here("data/hr_segments_prop_in_develope
 
 
 # read segment crossing values from A11_sum_segment_crossings.R
-########## will ultimately compare results from all three filter levels 
-# seg_crossing_sums <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_segs_only")) # more strictly filtered crossings
 # this has just the lion X months that there is real data for
- 
+# this is crossings summed for each segmentXmonthXlion combination, only considering naive crossed roads
+# the 0s ending to the file name indicates this has the uncrossed segments added back in
 monthly_seg_crossings_naive_roads_only_0s <- readRDS(here("data/analysis_inputs/monthly_seg_crossings_naive_roads_only_0s")) %>% 
   select(animal.id, year, month, seg.label, which.steps, monthly.seg.wt.crossing, monthly.seg.raw.crossing)
 
+
+monthly_seg_crossings_naive_roads_only_0s <- monthly_seg_crossings_naive_roads_only_0s %>% 
+  right_join(readRDS(here("data/full_lion_year_month_seg")))
 
 
 #puma_years <- seg_crossing_sums_naive_roads_only %>% 
@@ -59,20 +50,15 @@ composition_scale_df_pre <- monthly_seg_crossings_naive_roads_only_0s %>%
 # all_hr_road_habitat_95 has habitat values for some invalid puma X segment X year combinations
 # need to use left_join(all_hr_road_habitat_95) to ensure just valid puma X segment X year combinations
 # this is an expected many-to-many join because each segment may show up multiple times per year (in different months for same lion and in different lions HR) AND all_hr_road_habitat_95 has habitat at 10 spatial scales for each segment.
+# should add 10X rows (for 10 buffer distances)
 composition_scale_df <- composition_scale_df_pre %>% 
-  left_join(all_hr_road_habitat_95) %>% 
-  filter(prop.seg.in.dev50 > 0) # remove segments that are in continuous developed areas
+  left_join(all_hr_road_habitat_95)
 
-# nrow(composition_scale_df) should be nrow(composition_scale_df_pre) * 10
-# checking to make sure nothing got changed
-all(distinct(composition_scale_df, animal.id, year) %>% count(animal.id) == 
-      distinct(composition_scale_df_pre, animal.id, year) %>% count(animal.id))
+# remove segments that are in continuous developed areas
+composition_scale_df <- composition_scale_df %>% 
+  filter(prop.seg.in.dev50 > 0) 
 
-all(distinct(composition_scale_df, animal.id, year, seg.label) %>% count(animal.id, year) == 
-      distinct(composition_scale_df_pre, animal.id, year, seg.label) %>% count(animal.id, year))
 
-all(distinct(composition_scale_df, animal.id, year, buff) %>% count(animal.id) %>% mutate(n = n/10) == 
-      distinct(composition_scale_df_pre, animal.id, year) %>% count(animal.id))
 # all 3 should be all true because adding all_hr_road_habitat_95 should just add the habitat values at the 10 buffers for each lion X segment X year that exists in composition_scale_df
 
 # couple plots to check data ----
@@ -135,7 +121,7 @@ dev_scale_mods_offset <- fit_scale_mixed_mods_offset("mean.dev")
 dev_scale_mods_offset$aic
 summary(dev_scale_mods_offset$mean.dev30)
 # 30m best for mean.dev (june 2025)
-
+# 150m is the largest buffer with dAICc < 2. going to use that too
 
 
 treshr_scale_mods_offset <- fit_scale_mixed_mods_offset("mean.tre.shr")
