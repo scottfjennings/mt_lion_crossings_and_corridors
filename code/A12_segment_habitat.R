@@ -126,6 +126,16 @@ system.time(
 ) # 606!!! 2.5% the time of doing it by individual (and for a larger area)
 
 
+
+
+all_hr_road_habitat <- readRDS(here("data/all_hr_road_habitat_95")) %>% 
+  data.frame() %>% 
+  select(-geometry)
+
+all_hr_road_habitat_full <- left_join(full_combos, all_hr_road_habitat)
+
+
+
 saveRDS(all_hr_road_habitat, here("data/all_hr_road_habitat_95"))
 
 # checking below here
