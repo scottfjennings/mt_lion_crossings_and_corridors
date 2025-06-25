@@ -281,3 +281,8 @@ hr_segments_prop_in_developed <- st_intersection(segments_in_homeranges, interio
 
 saveRDS(hr_segments_prop_in_developed, here("data/hr_segments_prop_in_developed"))
 st_write(hr_segments_prop_in_developed, "data/shapefiles/predictor_variable_checking/hr_segments_prop_in_developed.shp", delete_layer = TRUE)
+
+
+
+hr_segments_prop_in_developed <- readRDS(here("data/hr_segments_prop_in_developed"))
+

@@ -159,6 +159,7 @@ hr_polygons %>%
   filter(contour == "est", !puma %in% hr_exclude_pumas) %>%
   st_write(here("data/shapefiles/puma_homeranges_95.shp"), append = FALSE)
 
+hr_polgons <- st_read(here("data/shapefiles/puma_homeranges_95.shp"))
 
 #st_read(here("data/shapefiles/puma_homeranges_99.shp")) %>% 
 hr_polygons %>% 
