@@ -101,15 +101,23 @@ saveRDS(bridges_per_segment, here("data/analysis_inputs/bridges_per_segment"))
 
 # compare the bridge vs stream layers for predicting number of crossings per segment ----
 
-# read the data frame with a record for each road segment in each mt lion's home range with the number of crossings per mt lion per month (includes 0-crossed segments)
-# from B2_sum_segment_crossing.R
-seg_crossing_sums_naive_roads_only <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_roads_only")) %>% 
-  filter(!animal.id %in% hr_exclude_pumas)
 
-# one more check for NA
-seg_crossing_sums_naive_roads_only %>%
-  filter(if_any(everything(), is.na)) %>% nrow()
-# good 3/20/25
+# read segment crossing values from A11_sum_segment_crossings.R
+# this has just the lion X months that there is real data for
+# this is crossings summed for each segmentXmonthXlion combination, only considering naive crossed roads
+# the 0s ending to the file name indicates this has the uncrossed segments added back in
+monthly_seg_crossings_naive_roads_only_0s <- readRDS(here("data/analysis_inputs/monthly_seg_crossings_naive_roads_only_0s")) %>% 
+  data.frame() %>%  
+  select(animal.id, year, month, seg.label, which.steps, monthly.seg.wt.crossing, monthly.seg.raw.crossing)
+
+
+monthly_seg_crossings_naive_roads_only_0s <- monthly_seg_crossings_naive_roads_only_0s %>% 
+  right_join(readRDS(here("data/full_lion_year_month_seg"))) %>% 
+  right_join(readRDS(here("data/hr_segments_prop_in_developed"))) %>% 
+  filter(prop.seg.in.dev50 == 0) %>% 
+  data.frame() %>%  
+  select(animal.id, year, month, seg.label, which.steps, monthly.seg.wt.crossing, monthly.seg.raw.crossing)
+
 
 
 
@@ -124,17 +132,15 @@ bridges_creeks %>%
 
 
 bridges_creeks_crossings <- bridges_creeks %>% 
-  full_join(seg_crossing_sums_naive_roads_only) %>% 
-  filter(!is.na(animal.id))
+  right_join(monthly_seg_crossings_naive_roads_only_0s)
+
+filter(bridges_creeks_crossings, is.na(monthly.seg.raw.crossing)) %>% nrow()
+# good June 2025
 
 # save this for the main analysis
 saveRDS(bridges_creeks_crossings, here("data/analysis_inputs/bridges_creeks_crossings"))
 
 
-# any NA
-bridges_creeks_crossings %>%
-  filter(if_any(everything(), is.na)) %>% nrow()
-# good 3/20/25
 
 # some checking for number of records:
 # should now be just 1 record for each segment, mt lion, year, month
@@ -144,33 +150,16 @@ count(bridges_creeks_crossings, animal.id, year, month) %>% nrow()
 # should still be 299 as of 3/20/25
 
 
-# raw and weighted crossings in the same function ----
-
-fit_creek_bridge_mods <- function(zcross) {
-  
-  # Dynamically set the response variable in the formula
-  formula_bridge <- as.formula(paste(zcross, "~ num.bridge + (1|animal.id)"))
-  formula_creek <- as.formula(paste(zcross, "~ num.creek + (1|animal.id)"))
-  
   # Fit models
-  zmods <- list(
-    "bridge" = lmer(formula_bridge, data = bridges_creeks_crossings, REML = FALSE),
-    "creek" = lmer(formula_creek, data = bridges_creeks_crossings, REML = FALSE)
+bridges_creeks_mods <- list(
+    "bridge" = lmer(monthly.seg.raw.crossing ~ num.bridge + offset(log(monthly.seg.wt.crossing + 0.0001)) + (1|animal.id), data = bridges_creeks_crossings, REML = FALSE),
+    "creek" = lmer(monthly.seg.raw.crossing ~ num.creek + offset(log(monthly.seg.wt.crossing + 0.0001)) + (1|animal.id), data = bridges_creeks_crossings, REML = FALSE)
   )
   
-  zmods$aic <- aictab(zmods, names(zmods)) %>% 
-    data.frame() %>% 
-    mutate(which.cross = zcross)
-  
-  return(zmods)
-}
+aictab(bridges_creeks_mods, names(bridges_creeks_mods)) %>% 
+    data.frame()
 
 
-creek_bridge_raw_cross <- fit_creek_bridge_mods("seg.raw.crossing")
-creek_bridge_wt_cross <- fit_creek_bridge_mods("seg.wt.crossing")
 
-creek_bridge_raw_cross$aic
-creek_bridge_wt_cross$aic
-
-# stream X road intersection points is by far better supported predictor of # road crossings than the cleaned bridge layer (dAICc = 2423.186)
+# stream X road intersection points is by far better supported predictor of # road crossings than the cleaned bridge layer (dAICc = 753.979)
 # this may be due to the segments with bridges over non-streams
