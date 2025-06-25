@@ -2,11 +2,31 @@
 library(tidyverse)
 library(here)
 library(sf)
+library(sp)
 library(lme4)
+library(gstat)
 library(AICcmodavg)
+library(spaMM)
 
 options(scipen = 999)
 source(here("code/helper_data.R"))
+
+
+# segment coords for spatial autocorr
+seg_midpoints <- readRDS(here("data/seg_midpoints"))
+
+# Extract coordinates from the sf geometry
+coords <- seg_midpoints %>%
+  mutate(coord = sf::st_coordinates(geometry)) %>%
+  # st_coordinates returns a matrix with X and Y columns
+  mutate(
+    x = coord[, "X"],
+    y = coord[, "Y"]
+  ) %>%
+  select(-coord, -geometry)
+
+
+
 
 # read the road segment habitat values from A12_segment_habitat.R
 # this has a row for each road segment in the combined 95% home range polygon, for each year and each buffer distance (30-300, by 30)
@@ -20,7 +40,7 @@ all_hr_road_habitat_95 <- readRDS(here("data/all_hr_road_habitat_95")) %>%
 # read df with the proportion of each segment in continuous areas of moderate or high development, from B1_clip_roads_by_impervious.R
 hr_segments_prop_in_developed <- readRDS(here("data/hr_segments_prop_in_developed")) %>% 
               data.frame() %>% 
-              select(-geometry, -seg.length.in.dev50, -seg.length)   %>% 
+              select(-geometry, -seg.length)   %>% 
   filter(animal.id %in% analysis_pumas,
          !animal.id %in% few_crossings_pumas,
          !animal.id %in% hr_exclude_pumas,
@@ -31,20 +51,19 @@ hr_segments_prop_in_developed <- readRDS(here("data/hr_segments_prop_in_develope
 # this has just the lion X months that there is real data for
 # this is crossings summed for each segmentXmonthXlion combination, only considering naive crossed roads
 # the 0s ending to the file name indicates this has the uncrossed segments added back in
-monthly_seg_crossings_naive_roads_only_0s <- readRDS(here("data/analysis_inputs/monthly_seg_crossings_naive_roads_only_0s")) %>% 
-  select(animal.id, year, month, seg.label, which.steps, monthly.seg.wt.crossing, monthly.seg.raw.crossing)
+#summed_crossings <- readRDS(here("data/analysis_inputs/monthly_seg_crossings_naive_roads_only_0s")) %>% 
+#  select(animal.id, year, month, seg.label, which.steps, monthly.seg.wt.crossing, monthly.seg.raw.crossing)
 
-
-monthly_seg_crossings_naive_roads_only_0s <- monthly_seg_crossings_naive_roads_only_0s %>% 
-  right_join(readRDS(here("data/full_lion_year_month_seg")))
-
+summed_crossings <- readRDS(here("data/analysis_inputs/annual_seg_crossings_naive_roads_only_0s_lions_combined")) %>%  
+    select(year, seg.label, which.steps, seg.wt = annual.seg.wt.crossing, raw.crossing = annual.seg.raw.crossing, num.lion.months, num.lions)
+  
 
 #puma_years <- seg_crossing_sums_naive_roads_only %>% 
 #  distinct(animal.id, year)
 
 # adding hr_segments_prop_in_developed shouldn't change the number of rows since it is derived from segments_in_homerange
-composition_scale_df_pre <- monthly_seg_crossings_naive_roads_only_0s %>% 
-  full_join(hr_segments_prop_in_developed)
+composition_scale_df_pre <- summed_crossings %>% 
+  left_join(hr_segments_prop_in_developed %>% distinct(seg.label, prop.seg.in.dev20, prop.seg.in.dev50))
 
 
 # all_hr_road_habitat_95 has habitat values for some invalid puma X segment X year combinations
@@ -52,18 +71,19 @@ composition_scale_df_pre <- monthly_seg_crossings_naive_roads_only_0s %>%
 # this is an expected many-to-many join because each segment may show up multiple times per year (in different months for same lion and in different lions HR) AND all_hr_road_habitat_95 has habitat at 10 spatial scales for each segment.
 # should add 10X rows (for 10 buffer distances)
 composition_scale_df <- composition_scale_df_pre %>% 
-  left_join(all_hr_road_habitat_95)
+  left_join(all_hr_road_habitat_95) %>% 
+  left_join(coords)
 
 # remove segments that are in continuous developed areas
 composition_scale_df <- composition_scale_df %>% 
-  filter(prop.seg.in.dev50 == 0) 
+  filter(prop.seg.in.dev50 == 0) %>% 
+  mutate(bin.crossing = ifelse(raw.crossing == 0, raw.crossing, 1))
 
 saveRDS(composition_scale_df, here("data/analysis_inputs/composition_scale_df"))
 
 composition_scale_df <- readRDS(here("data/analysis_inputs/composition_scale_df"))
 
 
-# all 3 should be all true because adding all_hr_road_habitat_95 should just add the habitat values at the 10 buffers for each lion X segment X year that exists in composition_scale_df
 
 # couple plots to check data ----
 
@@ -80,6 +100,87 @@ all_hr_road_habitat_95 %>%
 
 
 # modeling to select the best scale for both landscape composition predictors
+
+
+
+
+
+#' fit_scale_mixed_mods
+#'
+#' @param zcross either seg.raw.crossing or seg.wt.crossing, the average number of crossings per segment per mt lion per month
+#' @param zhab either mean.dev or mean.tre.shr, the mean development or tree+shrub cover within each buffer distance around each segment
+#'
+#' @returns list with an element for each model and one for the AIC table comparing all models
+#' 
+#' 
+#' @details
+#' this function uses the summed monthly segment proportion as an offset, with the summed raw crossing values (=1 for each time a segment was inside a BBMM UD) as the response variable. the advantage of the offset, vs using the summed proportions as a scaled crossing value, is that is weights the importance of the predictor variables while keeping the response on a scale that works properly for Poiss or NB error distribution. 
+#' 
+#'
+#' @examples
+fit_scale_mods_offset <- function(zhab) {
+  scales <- seq(30, 300, by = 30)
+  
+  zmods <- lapply(scales, function(s) {
+    df_scale <- dplyr::filter(composition_scale_df, buff == s)
+    MASS::glm.nb(
+      formula = as.formula(paste0(
+        "raw.crossing ~ ", zhab,
+        " + offset(log(seg.wt + 0.0001))"
+      )),
+      data = df_scale#,
+      #family = binomial
+    )
+  })
+  
+  names(zmods) <- paste(zhab, scales, sep = "")
+  
+  zmods$aic <- aictab(zmods, names(zmods)) %>%
+    data.frame() %>%
+    dplyr::mutate(across(c(AICc, Delta_AICc, ModelLik, AICcWt), \(x) round(x, 3)))
+  
+  return(zmods)
+}
+
+
+
+
+dev_scale_mods_offset <- fit_scale_mods_offset("mean.dev")
+dev_scale_mods_offset$aic
+
+#Modnames K    AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#2   mean.dev60 2 113.152      0.000    1.000  0.123 -54.57509 0.1232000
+#3   mean.dev90 2 113.236      0.084    0.959  0.118 -54.61691 0.2413540
+#4  mean.dev120 2 113.345      0.193    0.908  0.112 -54.67154 0.3532265
+#5  mean.dev150 2 113.493      0.341    0.843  0.104 -54.74534 0.4571392
+#6  mean.dev180 2 113.605      0.453    0.798  0.098 -54.80136 0.5553913
+#7  mean.dev210 2 113.702      0.549    0.760  0.094 -54.84979 0.6489982
+#10 mean.dev300 2 113.704      0.551    0.759  0.094 -54.85082 0.7425085
+#9  mean.dev270 2 113.709      0.557    0.757  0.093 -54.85355 0.8357643
+#8  mean.dev240 2 113.719      0.566    0.753  0.093 -54.85820 0.9285876
+#1   mean.dev30 2 114.243      1.091    0.580  0.071 -55.12042 1.0000000
+
+
+treshr_scale_mods_offset <- fit_scale_mods_offset("mean.tre.shr")
+treshr_scale_mods_offset$aic
+
+#Modnames K    AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#10 mean.tre.shr300 2 117.694      0.000    1.000  0.100 -56.84581 0.1003962
+#9  mean.tre.shr270 2 117.696      0.002    0.999  0.100 -56.84700 0.2006725
+#8  mean.tre.shr240 2 117.698      0.005    0.998  0.100 -56.84812 0.3008363
+#7  mean.tre.shr210 2 117.700      0.007    0.997  0.100 -56.84911 0.4009013
+#6  mean.tre.shr180 2 117.701      0.007    0.996  0.100 -56.84950 0.5009278
+#5  mean.tre.shr150 2 117.702      0.008    0.996  0.100 -56.84995 0.6009092
+#4  mean.tre.shr120 2 117.702      0.008    0.996  0.100 -56.85004 0.7008815
+#3   mean.tre.shr90 2 117.703      0.009    0.995  0.100 -56.85048 0.8008096
+#2   mean.tre.shr60 2 117.707      0.013    0.994  0.100 -56.85217 0.9005692
+#1   mean.tre.shr30 2 117.713      0.019    0.990  0.099 -56.85547 1.0000000
+
+
+# not worrying about spatial autocorrelation at this stage
+# for both compositions, all spatial scales dAICc < 2 when considering crossings for all animals lumped. 
+# just going to use 300m for both to capture the largest area
+
 
 #' fit_scale_mixed_mods
 #'
