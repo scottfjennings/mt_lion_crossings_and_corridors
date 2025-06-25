@@ -31,10 +31,10 @@ hr_segments_prop_in_developed <- readRDS(here("data/hr_segments_prop_in_develope
          !seg.label %in% p31_exclude_segments)
 
 
-# remove segments that are in continuous developed areas
+# remove segments that are in continuous developed areas; should be segments with 0 proportion in dev50
 analysis_lion_year_month_seg <- full_lion_year_month_seg %>% 
   left_join(hr_segments_prop_in_developed) %>% 
-  filter(prop.seg.in.dev50 > 0)
+  filter(prop.seg.in.dev50 == 0)
 
   
 
@@ -85,10 +85,13 @@ configuration_scale_df <- bind_rows(all_hr_road_patch_cohesion_treshr_full_month
   mutate(scale.group = paste(buff, forest.threshold, which.cohesion, sep = "_"))
 
 
-configuration_scale_df <- all_hr_road_patch_cohesion_treshr_full_months_crossings%>% 
+configuration_scale_df <- all_hr_road_patch_cohesion_treshr_full_months_crossings %>% 
   mutate(scale.group = paste(buff, forest.threshold, sep = "_"))
 
+saveRDS(configuration_scale_df, here("data/analysis_inputs/configuration_scale_df"))
 
+
+configuration_scale_df <- readRDS(here("data/analysis_inputs/configuration_scale_df"))
 
 #' fit_landscapemetrics_scale_mixed_mods_offset
 #'
@@ -127,7 +130,21 @@ fit_landscapemetrics_scale_mixed_mods_offset <- function(zhab) {
 
 cohesion_scale_mods_offset <- fit_landscapemetrics_scale_mixed_mods_offset("cohesion")
 cohesion_scale_mods_offset$aic
+
+#Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#5 cohesion200_50 3 16415.99      0.000    1.000  0.169 -8204.992 0.1690299
+#4 cohesion200_25 3 16416.00      0.019    0.991  0.167 -8205.002 0.3364609
+#7 cohesion300_25 3 16416.17      0.186    0.911  0.154 -8205.086 0.4904582
+#6 cohesion200_75 3 16416.34      0.351    0.839  0.142 -8205.168 0.6322578
+#2 cohesion100_50 3 16416.97      0.984    0.611  0.103 -8205.484 0.7356125
+#3 cohesion100_75 3 16417.39      1.403    0.496  0.084 -8205.694 0.8194449
+#8 cohesion300_50 3 16417.47      1.481    0.477  0.081 -8205.733 0.9000710
+#9 cohesion300_75 3 16418.25      2.263    0.322  0.055 -8206.124 0.9545824
+#1 cohesion100_25 3 16418.61      2.628    0.269  0.045 -8206.307 1.0000000
+
+
 summary(cohesion_scale_mods_offset$cohesion200_25)
 
 
-# 200m buffer with 25% cover threshold for being classified as woody is the best supported, but only barely.
+# 200m buffer with 50% cover threshold for being classified as woody is the best supported, but only barely.
+# all except 300, 75% and 100, 25% have dAICc < 2
