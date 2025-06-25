@@ -12,21 +12,6 @@ options(scipen = 999)
 source(here("code/helper_data.R"))
 
 
-# segment coords for spatial autocorr
-seg_midpoints <- readRDS(here("data/seg_midpoints"))
-
-# Extract coordinates from the sf geometry
-coords <- seg_midpoints %>%
-  mutate(coord = sf::st_coordinates(geometry)) %>%
-  # st_coordinates returns a matrix with X and Y columns
-  mutate(
-    x = coord[, "X"],
-    y = coord[, "Y"]
-  ) %>%
-  select(-coord, -geometry)
-
-
-
 
 # read the road segment habitat values from A12_segment_habitat.R
 # this has a row for each road segment in the combined 95% home range polygon, for each year and each buffer distance (30-300, by 30)
@@ -71,15 +56,14 @@ composition_scale_df_pre <- summed_crossings %>%
 # this is an expected many-to-many join because each segment may show up multiple times per year (in different months for same lion and in different lions HR) AND all_hr_road_habitat_95 has habitat at 10 spatial scales for each segment.
 # should add 10X rows (for 10 buffer distances)
 composition_scale_df <- composition_scale_df_pre %>% 
-  left_join(all_hr_road_habitat_95) %>% 
-  left_join(coords)
+  left_join(all_hr_road_habitat_95)
 
 # remove segments that are in continuous developed areas
 composition_scale_df <- composition_scale_df %>% 
   filter(prop.seg.in.dev50 == 0) %>% 
   mutate(bin.crossing = ifelse(raw.crossing == 0, raw.crossing, 1))
 
-saveRDS(composition_scale_df, here("data/analysis_inputs/composition_scale_df"))
+saveRDS(composition_scale_df, here("data/analysis_inputs/composition_scale_df_lions_combined"))
 
 composition_scale_df <- readRDS(here("data/analysis_inputs/composition_scale_df"))
 
@@ -118,18 +102,18 @@ all_hr_road_habitat_95 %>%
 #' 
 #'
 #' @examples
-fit_scale_mods_offset <- function(zhab) {
+fit_scale_mods_offset_logreg <- function(zhab) {
   scales <- seq(30, 300, by = 30)
   
   zmods <- lapply(scales, function(s) {
     df_scale <- dplyr::filter(composition_scale_df, buff == s)
-    MASS::glm.nb(
+    glm(
       formula = as.formula(paste0(
-        "raw.crossing ~ ", zhab,
+        "bin.crossing ~ ", zhab,
         " + offset(log(seg.wt + 0.0001))"
       )),
-      data = df_scale#,
-      #family = binomial
+      data = df_scale,
+      family = binomial
     )
   })
   
@@ -175,6 +159,49 @@ treshr_scale_mods_offset$aic
 #3   mean.tre.shr90 2 117.703      0.009    0.995  0.100 -56.85048 0.8008096
 #2   mean.tre.shr60 2 117.707      0.013    0.994  0.100 -56.85217 0.9005692
 #1   mean.tre.shr30 2 117.713      0.019    0.990  0.099 -56.85547 1.0000000
+
+
+
+#' fit_scale_mixed_mods
+#'
+#' @param zcross either seg.raw.crossing or seg.wt.crossing, the average number of crossings per segment per mt lion per month
+#' @param zhab either mean.dev or mean.tre.shr, the mean development or tree+shrub cover within each buffer distance around each segment
+#'
+#' @returns list with an element for each model and one for the AIC table comparing all models
+#' 
+#' 
+#' @details
+#' this function uses the summed monthly segment proportion as an offset, with the summed raw crossing values (=1 for each time a segment was inside a BBMM UD) as the response variable. the advantage of the offset, vs using the summed proportions as a scaled crossing value, is that is weights the importance of the predictor variables while keeping the response on a scale that works properly for Poiss or NB error distribution. 
+#' 
+#'
+#' @examples
+fit_scale_mods_offset_negbin <- function(zhab) {
+  scales <- seq(30, 300, by = 30)
+  
+  zmods <- lapply(scales, function(s) {
+    df_scale <- dplyr::filter(composition_scale_df, buff == s)
+    MASS::glm.nb(
+      formula = as.formula(paste0(
+        "raw.crossing ~ ", zhab,
+        " + offset(log(seg.wt + 0.0001))"
+      )),
+      data = df_scale
+    )
+  })
+  
+  names(zmods) <- paste(zhab, scales, sep = "")
+  
+  zmods$aic <- aictab(zmods, names(zmods)) %>%
+    data.frame() %>%
+    dplyr::mutate(across(c(AICc, Delta_AICc, ModelLik, AICcWt), \(x) round(x, 3)))
+  
+  return(zmods)
+}
+
+
+
+
+
 
 
 # not worrying about spatial autocorrelation at this stage
