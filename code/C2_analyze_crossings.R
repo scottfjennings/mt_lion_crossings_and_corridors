@@ -1,59 +1,244 @@
 
 
 
-# must run the data loading and model structure portions of B3_analysis_table_model_structure.R before this script to load crossing_analysis_table and set model structures
+library(tidyverse)
+library(here)
+library(sf)
+library(lme4)
+library(AICcmodavg)
+library(MuMIn)
+library(readxl)
+library(glmmTMB)
+
+
+source(here("code/helper_data.R"))
+
+
+# from C1_analysis_table_model_structure
+main_analysis_table <- readRDS(here("data/analysis_inputs/annual_analysis_table")) %>%
+  mutate(across(c(cohesion.200.50, mean.tre.shr.210, mean.dev.300), ~ as.numeric(scale(.x))),
+         binned.annual.seg.raw.crossing = ifelse(annual.seg.raw.crossing > 0, 1, annual.seg.raw.crossing),
+         prop.year = num.months/12,
+         class = ifelse(class == "Local", as.character(class), "Non-local"),
+         num.creek.bin = pmin(num.creek, 1)) # still treating this as a continuous predictor b/c we believe, given our segment length, that the relative importance of adding 1 more creek intersection is minimal beyond 4 creeks (e.g. creek intersections more than every 300m probably not important)
 
 
 
-# fit models ----
+# main_analysis_table <- main_analysis_table %>% 
+#  filter(monthly.seg.raw.crossing < 10)
 
 
-# compare lmer vs glmer ----
+# need to load exploration_model_formulas from C1_
+# initial modelling attempt, glmm with Poisson distribution  ----
 
-dev60.bridge.lmer = lmer(seg.raw.crossing ~ dev60 * num.creek + (1|animal.id), data = summed_crossing_analysis_table, REML = FALSE)
-dev60.bridge.glmer = glmer(seg.raw.crossing ~ dev60 * num.creek + (1|animal.id), data = summed_crossing_analysis_table, family = "poisson")
-aictab(list(dev60.bridge.glmer, dev60.bridge.lmer))
-
-# full candidate sets ----
-
-fit_wt_crossing_mods_puma <- function(zcross, zformulas) {
+#' fit_glmer_mods
+#' 
+#' general model fitting function. this should be good for exploratory and hypothesis testing models. fits a lme4::glmer with offset for segment proportion inside each BBMM UD and a random effect for animal.id.
+#' 
+#' 
+#' @param zformulas named list of fixed effects model structures
+#' @param zfamily model family to specify the error distribution and link function
+#'
+#' @returns list of model objects, with names matching the names of zformulas, and an aic table "$aic" for all model structures in zformulas
+#'
+#' @examples
+fit_glmer_mods <- function(zformulas, zfamily = "poisson") {
   
-zmods <- lapply(zformulas, function(rhs) {
-  formula <- as.formula(paste(zcross, "~", rhs, "+ (1|animal.id)"))
-  lmer(formula, data = crossing_analysis_table, REML = FALSE)
-})
-
-zmods$aic <- aictab(zmods, names(zmods))
-
-return(zmods)
+  zmods <- lapply(zformulas, function(fix.stru) {
+    formula <- as.formula(paste("monthly.seg.raw.crossing ~ ", fix.stru, "+ offset(log(monthly.seg.wt.crossing + 0.0001)) + (1|animal.id)"))
+    glmer(formula, data = main_analysis_table, family = zfamily)
+  })
+  
+  zmods$aic <- aictab(zmods, names(zmods))
+  
+  return(zmods)
 }
 
+
+
 system.time(
-  wt_crossings_mods_class2 <- fit_wt_crossing_mods_puma("seg.wt.crossing", model_formulas_1step)
-)
+  exploratory_mods_glmer <- fit_glmer_mods(exploration_model_formulas, "poisson")
+) # 589, 570
+
+
+exploratory_mods_glmer$aic         
+
+summary(exploratory_mods_glmer$cohesion_dev_creek_sex)
+
 
 # Plot residuals vs fitted
 plot(
-  fitted(wt_crossings_mods_class2$dev60.creek.sex), resid(wt_crossings_mods_class2$dev60.creek.sex),
+  fitted(exploratory_mods_glmer$cohesion_dev_creek_sex), resid(exploratory_mods_glmer$cohesion_dev_creek_sex),
   xlab = "Fitted Values",
   ylab = "Residuals",
-  main = "Residuals vs Fitted Values",
+  main = "Residuals vs Fitted Values best glmer model",
   pch = 20,
   col = "steelblue"
 )
 abline(h = 0, lty = 2, col = "red")
 
-# modeling weighted crossings with just animal.id as random intercept ----
+# the best glmm poisson model is still under predicting segments with few crossings and overpredicting segments with a lot of crossings
+# zero inflation is still probably causing problems
 
-saveRDS(wt_crossings_mods_class2, here("model_objects/wt_crossings_mods_class2"))
+# fitting negative binomial with glmmTMB which should be faster than fitting with lme4
+#' fit_glmmTMB_nb_mods
+#' 
+#' General model fitting function using glmmTMB. Useful for exploratory and hypothesis-testing models.
+#' Fits a negative binomial model with an offset and a random effect for animal.id.
+#' 
+#' @param zformulas Named list of fixed effect model structures
+#' 
+#' @return List of model objects, with names matching zformulas, and an AIC table "$aic"
+#' 
+#' @examples
+fit_glmmTMB_nb_mods <- function(zformulas) {
+  
+  zmods <- lapply(zformulas, function(fix.stru) {
+    formula <- as.formula(
+      paste(
+        "monthly.seg.raw.crossing ~", 
+        fix.stru, 
+        "+ offset(log(monthly.seg.wt.crossing + 0.0001)) + (1|animal.id)"
+      )
+    )
+    
+    glmmTMB::glmmTMB(
+      formula = formula,
+      family = glmmTMB::nbinom2(),
+      data = main_analysis_table
+    )
+  })
+  
+  zmods$aic <- aictab(zmods, base = TRUE)
+  
+  return(zmods)
+}
+
+
+system.time(
+  exploratory_mods_glmmtmb_nb <- fit_glmmTMB_nb_mods(exploration_model_formulas[1])
+) # 
+
+
+exploratory_mods$aic         
+
+summary(exploratory_mods$cohesion_dev_creek_sex)
+
+
+# Plot residuals vs fitted
+plot(
+  fitted(exploratory_mods_glmer$cohesion_dev_creek_sex), resid(exploratory_mods_glmer$cohesion_dev_creek_sex),
+  xlab = "Fitted Values",
+  ylab = "Residuals",
+  main = "Residuals vs Fitted Values best glmer model",
+  pch = 20,
+  col = "steelblue"
+)
+abline(h = 0, lty = 2, col = "red")
 
 
 
-wt_crossings_mods_puma <- readRDS(here("model_objects/wt_crossings_mods_puma"))
+# fitting glmmTMB mods which allow more flexible handling of zero inflation, overdispersion ----
 
-best_mod <- wt_crossings_mods_puma$dev60.creek.class
 
-sec_best_mod <- wt_crossings_mods_puma$dev60.class.bridge
+#' fit_glmmTMB_mods
+#' 
+#' general model fitting function. this should be good for exploratory and hypothesis testing models. fits glmmTMB::glmmTMB models with offset for segment proportion inside each BBMM UD and a random effect for animal.id. allows specifying formula to model the zero-inflated process
+#' 
+#' 
+#' @param zformulas named list of fixed effects model structures
+#' @param zfamily model family to specify the error distribution and link function
+#'
+#' @returns list of model objects, with names matching the names of zformulas, and an aic table "$aic" for all model structures in zformulas
+#'
+#' @examples
+fit_glmmtmb_mods <- function(zresponse, zformulas, zfamily, ziform) {
+  # Ensure zfamily is interpreted correctly
+  if (is.character(zfamily)) {
+    zfamily <- match.fun(zfamily)()  # e.g., "nbinom2" → nbinom2()
+  }
+  
+  form_names <- names(zformulas)
+  
+  zmods <- lapply(zformulas, function(fix.stru) {
+    formula <- as.formula(paste(
+      zresponse, "~", fix.stru,
+      "+ prop.year + offset(log(annual.seg.wt.crossing + 0.0001)) + (1|animal.id)"
+    ))
+    
+    glmmTMB::glmmTMB(
+      formula,
+      data = main_analysis_table,
+      family = zfamily,
+      ziformula = as.formula(ziform)
+    )
+  })
+  
+  names(zmods) <- form_names
+  zmods$aic <- AICcmodavg::aictab(zmods, form_names)
+  return(zmods)
+}
+
+
+
+
+
+
+system.time(
+  exploratory_mods_crosscount <- fit_glmmtmb_mods("annual.seg.raw.crossing", exploration_model_formulas, zfamily = "nbinom2", ziform = "~ 0")
+) # 
+
+
+exploratory_mods_crosscount$aic         
+
+summary(exploratory_mods_glmmtmb$cohesion_dev_creek_sex)
+
+
+# Plot residuals vs fitted
+plot(
+  fitted(exploratory_mods_glmmtmb$cohesion_dev_creek_sex), resid(exploratory_mods_glmmtmb$cohesion_dev_creek_sex),
+  xlab = "Fitted Values",
+  ylab = "Residuals",
+  main = "Residuals vs Fitted Values best glmmTMB model",
+  pch = 20,
+  col = "steelblue"
+)
+abline(h = 0, lty = 2, col = "red")
+
+
+
+
+
+system.time(
+  exploratory_mods_crossbin <- fit_glmmtmb_mods("binned.annual.seg.raw.crossing", exploration_model_formulas, zfamily = binomial(link = "logit"), ziform = "~ 1")
+) # 
+
+
+exploratory_mods_crossbin$aic
+
+
+summary(exploratory_mods_crossbin$dev_sex)
+
+
+# Plot residuals vs fitted
+plot(
+  fitted(exploratory_mods_crossbin$dev_sex), resid(exploratory_mods_crossbin$dev_sex),
+  xlab = "Fitted Values",
+  ylab = "Residuals",
+  main = "Residuals vs Fitted Values best glmmTMB model",
+  pch = 20,
+  col = "steelblue"
+)
+abline(h = 0, lty = 2, col = "red")
+
+
+
+
+
+
+
+
+
 
 # model validation ----
 # r-squared
@@ -144,28 +329,14 @@ zpred_wt %>%
 
 ggsave(here("figures/dev60.creek.class_600dpi.png"), dpi = 600, width = 6, height = 4)
 
-# fit with weighted crossings as response
-wt_crossings_mods <- fit_summed_crossing_mods("seg.wt.crossing")
+#######
 
-zpred_wt = predict(wt_crossings_mods$dev60.bridge, znewdat, se.fit = TRUE, type = "response", re.form = NA) %>% 
-  data.frame() %>% 
-  bind_cols(znewdat) %>% 
-  mutate(lwr = fit - (1.96 * se.fit),
-         upr = fit + (1.96 * se.fit),
-         dev.60 = dev.60 * 100)
+# fitting hypotheis testing models ----
 
-zpred_wt %>% 
-  ggplot() +
-  geom_line(aes(y = fit, x = dev.60, color = as.character(num.creek))) +
-  geom_ribbon(aes(ymin = lwr, ymax = upr, x = dev.60, fill = as.character(num.creek)), alpha = 0.3) +
-  #facet_wrap(~num.creek) +
-  labs(x = "% developed area within 60m of road",
-       y = "# crossings",
-       title = "Mean number of weighted road crossings\nper year per 1300m road segment",
-       color = "# bridges per\nroad segment",
-       fill = "# bridges per\nroad segment") +
-  theme_bw()
-
-
-
-
+hypothesis_model_formulas <- list(
+  
+  cohesion.patchrd = "cohesion.200.50 * patch.touches.road", # cohesion importance is dependent on the woody vegetation patch touching the segment
+  cohesion.treshr = "cohesion.200.50 * mean.tre.shr.210", # cohesion importance is dependent on woody vegetation % cover
+  cohesion.treshr = "cohesion.200.50 * I(mean.tre.shr.210^2)", # cohesion importance is dependent on woody vegetation % cover but the relationship is not linear
+  
+)

@@ -15,143 +15,72 @@ library(glmmTMB)
 
 source(here("code/helper_data.R"))
 
-puma_sexes <- read_xlsx("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/COLLAR DATE INFO_31Dec2023.xlsx")
 
-names(puma_sexes) <- tolower(names(puma_sexes))
-
-puma_sexes <- puma_sexes %>%
-  rename("animal.id" = `animal id`) %>% 
-  distinct(animal.id, sex)
-
-# final data prep ----
-all_hr_road_habitat_df <- readRDS(here("data/analysis_inputs/all_hr_road_habitat_df")) %>% 
-  filter(!animal.id %in% hr_exclude_pumas,
-         !seg.label %in% p31_exclude_segments)
-
-# for crossed/not crossed, 90m buffer best for development and 300m best for tree+shrub cover
-# for num crossings in crossed, 30m buffer best for development and 60m best for tree+shrub cover
-
-best_hab <- full_join(all_hr_road_habitat_df %>% 
-                        filter(buff == 90) %>% # for crossed/not
-                        select(seg.label, animal.id, year, dev.90 = mean.dev),
-                      all_hr_road_habitat_df %>% 
-                        filter(buff == 30) %>% # for num crossings in crossed
-                        select(seg.label, animal.id, year, dev.30 = mean.dev)) %>% 
-  full_join(all_hr_road_habitat_df %>% 
-              filter(buff == 30) %>% # for crossed/not
-              select(seg.label, animal.id, year, tre.shr.300 = mean.tre.shr)) %>% 
-  full_join(all_hr_road_habitat_df %>% 
-              filter(buff == 60) %>% # for num crossings in crossed
-              select(seg.label, animal.id, year, tre.shr.60 = mean.tre.shr))
-                      
-                  
+# from C1_analysis_table_model_structure
+main_analysis_table <- readRDS(here("data/analysis_inputs/annual_analysis_table")) %>%
+  mutate(across(c(cohesion.200.50, mean.tre.shr.210, mean.dev.300), ~ as.numeric(scale(.x))),
+         binned.annual.seg.raw.crossing = ifelse(annual.seg.raw.crossing > 0, 1, annual.seg.raw.crossing),
+         prop.year = num.months/12)
 
 
-crossing_analysis_table <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_roads_only")) %>% 
-  filter(!animal.id %in% hr_exclude_pumas) %>% 
-  left_join(puma_sexes) %>% 
-  left_join(best_hab) %>% 
-  left_join(readRDS(here("data/analysis_inputs/streams_per_segment"))) %>% 
-  filter(!animal.id %in% hr_exclude_pumas,
-         !seg.label %in% p31_exclude_segments,
-         !(is.na(dev.90) | is.na(dev.30) | is.na(tre.shr.300) | is.na(tre.shr.60))) %>% # still a few lingering segments along the coast with NA habitat values
-  filter(!class %in% c("Access Road", # only 5 total segments and none in any male home ranges so they break the 3 way interaction models
-                       "Freeway"),
-         num.creek < 6) %>%  # only 7 segments have 6 or more crossings
-  mutate(#class = factor(class, levels = c("Local", "Collector", "Arterial", "Highway")),
-         class = ifelse(class == "Local", "Local", "Not local"),
-         crossed.bin = as.numeric(seg.wt.crossing > 0),
-         num.creek.bin = as.numeric(num.creek > 0)) %>% 
-  filter(animal.id != "P25",
-         !animal.id %in% few_crossings_pumas)
-  
+
+
+
 ### step 1 model crossed vs not crossed with binomial GLMM ----
 
 
 
-fit_crossing_mods_yes_no <- function(zlink = "logit") {
-# not including year because for each road segment (the analysis unit) year is perfectly correlated with tre.shr.300 and with dev.90  
-#  90m is the best scale for % development for weighted crossings
-# 300m is best for tree+shrub  
-# not  combining treshr300 and dev60 together in any model  
+# fitting negative binomial with glmmTMB which should be faster than fitting with lme4
+#' fit_crossing_mods_yes_no
+#' 
+#' General model fitting function using glmmTMB. Useful for exploratory and hypothesis-testing models.
+#' Fits a negative binomial model with an offset and a random effect for animal.id.
+#' 
+#' @param zformulas Named list of fixed effect model structures
+#' 
+#' @return List of model objects, with names matching zformulas, and an AIC table "$aic"
+#' 
+#' @examples
+fit_crossing_mods_yes_no <- function(zformulas, zlink = "logit") {
   
-# just using creek crossing yes/no for crossed yes/no
+  zmods <- lapply(zformulas, function(fix.stru) {
+    formula <- as.formula(
+      paste(
+        "binned.annual.seg.raw.crossing ~", 
+        fix.stru, 
+        "+ prop.year + offset(log(annual.seg.wt.crossing + 0.0001)) + (1|animal.id)"
+      )
+    )
     
-# tre.shr.300, dev.90, creek, class, sex  
-
-  zmods <- list(
-    # Single predictors
-    treshr300 = glmmTMB(crossed.bin ~ tre.shr.300 + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90     = glmmTMB(crossed.bin ~ dev.90 + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    creek     = glmmTMB(crossed.bin ~ num.creek + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    class     = glmmTMB(crossed.bin ~ class + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    sex       = glmmTMB(crossed.bin ~ sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    
-    # Two-way additive
-    treshr300_creek = glmmTMB(crossed.bin ~ tre.shr.300 + num.creek + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90_creek     = glmmTMB(crossed.bin ~ dev.90 + num.creek + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    treshr300_sex   = glmmTMB(crossed.bin ~ tre.shr.300 + sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90_sex       = glmmTMB(crossed.bin ~ dev.90 + sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    treshr300_class = glmmTMB(crossed.bin ~ tre.shr.300 + class + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90_class     = glmmTMB(crossed.bin ~ dev.90 + class + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    creek_sex       = glmmTMB(crossed.bin ~ num.creek + sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    class_sex       = glmmTMB(crossed.bin ~ class + sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    class_creek     = glmmTMB(crossed.bin ~ class + num.creek + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    
-    # Three-way additive
-    treshr300_creek_class = glmmTMB(crossed.bin ~ tre.shr.300 + num.creek + class + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    treshr300_creek_sex   = glmmTMB(crossed.bin ~ tre.shr.300 + num.creek + sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    treshr300_class_sex   = glmmTMB(crossed.bin ~ tre.shr.300 + class + sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90_creek_class     = glmmTMB(crossed.bin ~ dev.90 + num.creek + class + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90_creek_sex       = glmmTMB(crossed.bin ~ dev.90 + num.creek + sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90_class_sex       = glmmTMB(crossed.bin ~ dev.90 + class + sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    creek_class_sex       = glmmTMB(crossed.bin ~ num.creek + class + sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    
-    # Two-way interactions
-    treshr300.creek = glmmTMB(crossed.bin ~ tre.shr.300 * num.creek + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90.creek     = glmmTMB(crossed.bin ~ dev.90 * num.creek + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    treshr300.sex   = glmmTMB(crossed.bin ~ tre.shr.300 * sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90.sex       = glmmTMB(crossed.bin ~ dev.90 * sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    treshr300.class = glmmTMB(crossed.bin ~ tre.shr.300 * class + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90.class     = glmmTMB(crossed.bin ~ dev.90 * class + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    creek.sex       = glmmTMB(crossed.bin ~ num.creek * sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    creek.class     = glmmTMB(crossed.bin ~ num.creek * class + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    class.sex       = glmmTMB(crossed.bin ~ class * sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    
-    # Three-way interactions
-    treshr300.creek.class = glmmTMB(crossed.bin ~ tre.shr.300 * num.creek * class + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    treshr300.creek.sex   = glmmTMB(crossed.bin ~ tre.shr.300 * num.creek * sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    treshr300.class.sex   = glmmTMB(crossed.bin ~ tre.shr.300 * class * sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90.creek.class     = glmmTMB(crossed.bin ~ dev.90 * num.creek * class + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90.creek.sex       = glmmTMB(crossed.bin ~ dev.90 * num.creek * sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    dev90.class.sex       = glmmTMB(crossed.bin ~ dev.90 * class * sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    creek.class.sex       = glmmTMB(crossed.bin ~ num.creek * class * sex + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink)),
-    
-    # Null model
-    intercept = glmmTMB(crossed.bin ~ 1 + (1|animal.id), data = crossing_analysis_table, family = binomial(link = zlink))
-  )
+    glmmTMB::glmmTMB(
+      formula = formula,
+      family = binomial(link = zlink),
+      data = main_analysis_table,
+      ziformula = ~ cohesion.200.50 * patch.touches.road  # or include predictors for zero-inflation
+    )
+  })
   
-  zmods$aic = aictab(zmods, names(zmods))
+  zmods$aic <- aictab(zmods, base = TRUE)
   
   return(zmods)
-  
 }
+
 
 
 # fit for weighted crossings as response
 
 system.time(
-  yes_no_crossings_mods_logit_class2 <- fit_crossing_mods_yes_no()
-) # 231
+  crossings_mods_yes_no_logit <- fit_crossing_mods_yes_no(exploration_model_formulas, "logit")
+) # 231. 560 if ziformula
 
-yes_no_crossings_mods_logit_class2$aic
+crossings_mods_yes_no_logit$aic
 # dev90.creek.class best with all AICcWt
 
 plot(
-  fitted(yes_no_crossings_mods_logit_class2$dev90.creek.sex), residuals(yes_no_crossings_mods_logit_class2$dev90.creek.sex),
+  fitted(crossings_mods_yes_no_logit$cohesion_dev_creek_class_sex), residuals(crossings_mods_yes_no_logit$cohesion_dev_creek_class_sex, type = "pearson"),
   xlab = "Fitted Values",
   ylab = "Residuals",
-  main = "Residuals vs Fitted Values",
+  main = "Residuals vs Fitted Values for best model for binomial crossed/not crossed",
   pch = 20,
   col = "steelblue"
 )
