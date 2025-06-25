@@ -54,64 +54,112 @@ analysis_lion_year_seg <- readRDS(here("data/full_lion_year_month_seg")) %>%
          !animal.id %in% hr_exclude_pumas,
          !seg.label %in% p31_exclude_segments)
 
+
+###
+# read df with the proportion of each segment in continuous areas of moderate or high development, from B1_clip_roads_by_impervious.R
+hr_segments_prop_in_developed <- readRDS(here("data/hr_segments_prop_in_developed")) %>% 
+  data.frame() %>% 
+  select(-geometry, -seg.length)   %>% 
+  filter(animal.id %in% analysis_pumas,
+         !animal.id %in% few_crossings_pumas,
+         !animal.id %in% hr_exclude_pumas,
+         !seg.label %in% p31_exclude_segments)
+
+
+summed_crossings <- readRDS(here("data/analysis_inputs/annual_seg_crossings_naive_roads_only_0s_lions_combined")) %>%  
+  select(year, seg.label, which.steps, seg.wt = annual.seg.wt.crossing, raw.crossing = annual.seg.raw.crossing, num.lion.months, num.lions)
+
+
+# adding hr_segments_prop_in_developed shouldn't change the number of rows since it is derived from segments_in_homerange
+main_analysis_df_pre <- summed_crossings %>% 
+  left_join(hr_segments_prop_in_developed %>% distinct(seg.label, prop.seg.in.dev20, prop.seg.in.dev50))
+
+
+
 # habitat composition. veg and development ----
 # using 30m and 300m buffer distances 
 # by month
-monthly_analysis_hab_composition <- readRDS(here("data/analysis_inputs/composition_scale_df")) %>% 
-  pivot_longer(cols = contains("mean."), names_to = "varb") %>% 
-  mutate(varb.buff = paste(varb, buff, sep = ".")) %>% 
-  filter(varb.buff %in% c("mean.tre.shr.210", "mean.dev.300")) %>% 
-  pivot_wider(id_cols = c(animal.id, seg.label, year, month, monthly.seg.raw.crossing, monthly.seg.wt.crossing), names_from = varb.buff, values_from = value) %>% 
-  right_join(analysis_lion_year_month_seg)
+#monthly_analysis_hab_composition <- readRDS(here("data/analysis_inputs/composition_scale_df")) %>% 
+#  pivot_longer(cols = contains("mean."), names_to = "varb") %>% 
+#  mutate(varb.buff = paste(varb, buff, sep = ".")) %>% 
+#  filter(varb.buff %in% c("mean.tre.shr.210", "mean.dev.300")) %>% 
+#  pivot_wider(id_cols = c(animal.id, seg.label, year, month, monthly.seg.raw.crossing, monthly.seg.wt.crossing), names_from = varb.buff, values_from = value) %>% 
+#  right_join(analysis_lion_year_month_seg)
 # by year
-annual_analysis_hab_composition <- readRDS(here("data/analysis_inputs/composition_scale_df")) %>% 
+#annual_analysis_hab_composition <- readRDS(here("data/analysis_inputs/composition_scale_df")) %>% 
+#  pivot_longer(cols = contains("mean."), names_to = "varb") %>% 
+#  mutate(varb.buff = paste(varb, buff, sep = ".")) %>% 
+#  filter(varb.buff %in% c("mean.tre.shr.210", "mean.dev.300")) %>% 
+#  pivot_wider(id_cols = c(animal.id, seg.label, year, month, monthly.seg.raw.crossing, monthly.seg.wt.crossing), names_from = varb.buff, values_from = value) %>%
+#  group_by(animal.id, year, seg.label, mean.tre.shr.210, mean.dev.300) %>% 
+#  summarise(annual.seg.raw.crossing = sum(monthly.seg.raw.crossing),
+#            annual.seg.wt.crossing = sum(monthly.seg.wt.crossing)) %>% 
+#  ungroup() %>% 
+#  right_join(analysis_lion_year_seg)
+
+
+
+analysis_hab_composition <- readRDS(here("data/analysis_inputs/composition_scale_df_lions_combined")) %>% 
   pivot_longer(cols = contains("mean."), names_to = "varb") %>% 
   mutate(varb.buff = paste(varb, buff, sep = ".")) %>% 
-  filter(varb.buff %in% c("mean.tre.shr.210", "mean.dev.300")) %>% 
-  pivot_wider(id_cols = c(animal.id, seg.label, year, month, monthly.seg.raw.crossing, monthly.seg.wt.crossing), names_from = varb.buff, values_from = value) %>%
-  group_by(animal.id, year, seg.label, mean.tre.shr.210, mean.dev.300) %>% 
-  summarise(annual.seg.raw.crossing = sum(monthly.seg.raw.crossing),
-            annual.seg.wt.crossing = sum(monthly.seg.wt.crossing)) %>% 
-  ungroup() %>% 
-  right_join(analysis_lion_year_seg)
+  filter(varb.buff %in% c("mean.tre.shr.300", "mean.dev.60")) %>% 
+  pivot_wider(id_cols = c(seg.label, year, raw.crossing, seg.wt), names_from = varb.buff, values_from = value) %>% 
+  right_join(main_analysis_df_pre) %>% 
+  filter(prop.seg.in.dev50 == 0)
 
 # do any segments have missing composition values?
 monthly_analysis_hab_composition %>% summarise(across(starts_with("mean."), ~ any(is.na(.)))) # should all be FALSE
 annual_analysis_hab_composition %>% summarise(across(starts_with("mean."), ~ any(is.na(.)))) # should all be FALSE
+analysis_hab_composition %>% summarise(across(starts_with("mean."), ~ any(is.na(.)))) # should all be FALSE as long as prop.seg.in.dev50 filter is used above
 
 
 # habitat configuration. cohesion ----
 # by month
-monthly_analysis_hab_configuration <- readRDS(here("data/analysis_inputs/configuration_scale_df")) %>% 
-  filter(buff == 200, forest.threshold == 50) %>% 
-  right_join(analysis_lion_year_month_seg) %>% 
-  rename(cohesion.200.50 = cohesion) %>% # renaming to include buff ad threshold as a reminder
-  select(animal.id, year, month, seg.label, cohesion.200.50, monthly.seg.raw.crossing, monthly.seg.wt.crossing, patch.touches.road, np)
+#monthly_analysis_hab_configuration <- readRDS(here("data/analysis_inputs/configuration_scale_df")) %>% 
+#  filter(buff == 200, forest.threshold == 50) %>% 
+#  right_join(analysis_lion_year_month_seg) %>% 
+#  rename(cohesion.200.50 = cohesion) %>% # renaming to include buff ad threshold as a reminder
+#  select(animal.id, year, month, seg.label, cohesion.200.50, monthly.seg.raw.crossing, monthly.seg.wt.crossing, patch.touches.road, np)
 # by year
-annual_analysis_hab_configuration <- readRDS(here("data/analysis_inputs/configuration_scale_df")) %>% 
-  filter(buff == 200, forest.threshold == 50) %>% 
-  right_join(analysis_lion_year_seg) %>% 
-  rename(cohesion.200.50 = cohesion) %>% # renaming to include buff ad threshold as a reminder
-  select(animal.id, year, month, seg.label, cohesion.200.50, monthly.seg.raw.crossing, monthly.seg.wt.crossing, patch.touches.road, np) %>% 
-  group_by(animal.id, year, seg.label, cohesion.200.50, patch.touches.road, np) %>% 
-  summarise(annual.seg.raw.crossing = sum(monthly.seg.raw.crossing),
-            annual.seg.wt.crossing = sum(monthly.seg.wt.crossing)) %>% 
-  ungroup() 
+#annual_analysis_hab_configuration <- readRDS(here("data/analysis_inputs/configuration_scale_df")) %>% 
+#  filter(buff == 200, forest.threshold == 50) %>% 
+#  right_join(analysis_lion_year_seg) %>% 
+#  rename(cohesion.200.50 = cohesion) %>% # renaming to include buff ad threshold as a reminder
+#  select(animal.id, year, month, seg.label, cohesion.200.50, monthly.seg.raw.crossing, monthly.seg.wt.crossing, patch.touches.road, np) %>% 
+#  group_by(animal.id, year, seg.label, cohesion.200.50, patch.touches.road, np) %>% 
+#  summarise(annual.seg.raw.crossing = sum(monthly.seg.raw.crossing),
+#            annual.seg.wt.crossing = sum(monthly.seg.wt.crossing)) %>% 
+#  ungroup() 
+
+analysis_hab_configuration <- readRDS(here("data/analysis_inputs/configuration_scale_df_lions_combined")) %>% 
+  filter(buff == 100, forest.threshold == 25) %>% 
+  right_join(main_analysis_df_pre) %>% 
+  filter(prop.seg.in.dev50 == 0) %>% 
+  rename(cohesion.100.25 = cohesion) %>% # renaming to include buff ad threshold as a reminder
+  select(year, seg.label, cohesion.100.25, raw.crossing, seg.wt, patch.touches.road, np) 
+
 
 # do any segments have missing cohesion values?
-monthly_analysis_hab_configuration %>% filter(is.na(cohesion.200.50)) %>% nrow()
-annual_analysis_hab_configuration %>% filter(is.na(cohesion.200.50)) %>% nrow()
+#monthly_analysis_hab_configuration %>% filter(is.na(cohesion.200.50)) %>% nrow()
+#annual_analysis_hab_configuration %>% filter(is.na(cohesion.200.50)) %>% nrow()
+analysis_hab_configuration %>% filter(is.na(cohesion.100.25)) %>% nrow()
 
 
-monthly_analysis_table <- full_join(monthly_analysis_hab_configuration, monthly_analysis_hab_composition)%>% 
+#monthly_analysis_table <- full_join(monthly_analysis_hab_configuration, monthly_analysis_hab_composition)%>% 
+#  left_join(readRDS(here("data/analysis_inputs/streams_per_segment"))) %>% 
+#  left_join(puma_sexes) %>% 
+#  left_join(readRDS(here("data/seg_midpoints_road_class")))
+
+#annual_analysis_table <- full_join(annual_analysis_hab_configuration, annual_analysis_hab_composition)%>% 
+#  left_join(readRDS(here("data/analysis_inputs/streams_per_segment"))) %>% 
+#  left_join(puma_sexes) %>% 
+#  left_join(readRDS(here("data/seg_midpoints_road_class")))
+
+analysis_table <- full_join(analysis_hab_configuration, analysis_hab_composition) %>% 
   left_join(readRDS(here("data/analysis_inputs/streams_per_segment"))) %>% 
-  left_join(puma_sexes) %>% 
-  left_join(readRDS(here("data/seg_midpoints_road_class")))
+  left_join(readRDS(here("data/seg_midpoints_road_class"))) %>% 
+  mutate(bin.crossing = ifelse(raw.crossing == 0, raw.crossing, 1))
 
-annual_analysis_table <- full_join(annual_analysis_hab_configuration, annual_analysis_hab_composition)%>% 
-  left_join(readRDS(here("data/analysis_inputs/streams_per_segment"))) %>% 
-  left_join(puma_sexes) %>% 
-  left_join(readRDS(here("data/seg_midpoints_road_class")))
 
 
 monthly_analysis_table %>% summarise(across(c(starts_with("mean."), cohesion.200.50, num.creek, sex, class), ~ any(is.na(.)))) # all should be FALSE
@@ -147,6 +195,16 @@ annual_analysis_table <- annual_analysis_table %>%
 
 
 saveRDS(annual_analysis_table, here("data/analysis_inputs/annual_analysis_table"))
+
+
+combined_lions_analysis_table <- analysis_table %>% 
+  mutate(class = ifelse(class == "Access Road", "Local", class)) %>%  # only 1 segment and only in P31's HR
+  mutate(across(starts_with("mean."), ~ .x * 100)) %>% 
+  mutate(class = relevel(factor(class), ref = "Local")) # using Local as the reference level because it is most common, is possibly more likely to be crossed, adn becasue it will be handy to compare the likely busier roads to Local
+
+
+saveRDS(combined_lions_analysis_table, here("data/analysis_inputs/combined_lions_analysis_table"))
+
 
 
 # optional data checking plots and summaries ----
