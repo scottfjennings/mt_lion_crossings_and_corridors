@@ -53,7 +53,7 @@ bbmm_steps <- bbmm_equal_seg_weights %>%
 
 # get naive segment crossings. ----
 # until now only have whole road naive crossings, need to redo the spatial intersection to find the naive segment crossings
-# this allows calculating how many times each segment (not entire roads) was naively crossed ----
+# this allows calculating how many times each segment (not entire roads) was naively crossed 
 
 # segments crossed an even number of times likely were not true crossings; the cat instead likely e.g. went around the outside of a curve.
 
@@ -121,7 +121,8 @@ naive_crossed_segs_df <- naive_crossed_segs %>%
   bind_rows()
 
 
-# now calculate how many naive crossings of each naive crossed segment there are. 
+
+# now calculate how many naive crossings of each naive crossed segment there are. ----
 # some segments may have been split into sub-segments if the segment crossed in and out and back in the BBMM UD
 # the calculated bbmm.segment.weight is for these sub-segments
 # need to sum bbmm.segment.weight for each segment
@@ -154,7 +155,7 @@ num_naive_seg_crossings <- num_naive_sub_seg_crossings %>%
   ungroup()
 
 
-# finally, count crossings for each road. want to maintain a record for each segment, so do mutate for calculation instead of summarise 
+# finally, count crossings for each full road. want to maintain a record for each segment, so do mutate for calculation instead of summarise 
 num_naive_seg_road_crossings <- num_naive_seg_crossings %>% 
   group_by(crossing.step, road.label) %>% 
   mutate(num.naive.road.crossings = sum(num.naive.seg.crossings),
@@ -188,6 +189,8 @@ count(num_naive_seg_road_crossings, num.naive.seg.crossings)
 num_naive_seg_road_crossings_num_roads %>% 
   distinct(crossing.step, road.label, num.naive.road.crossings) %>% 
   count(num.naive.road.crossings)
+
+
 
 # NOTE: num_naive_seg_road_crossings_num_roads HAS A RECORD FOR EACH ROAD SEGMENT IN EACH CROSSING STEP BBMM UD
 # THIS DOES NOT HAVE ANY SEGMENTS THAT WERE OUTSIDE BBMM UDs BUT STILL INSIDE LION HOME RANGES (i.e. the non-crossed segments)
@@ -229,12 +232,13 @@ nrow(num_naive_seg_road_crossings_num_roads_months_years) == nrow(num_naive_seg_
 
 
 
-# next, calculate monthly crossings per segment ----
+# next, calculate crossings by segment-lion-month, segment-lion-year, and segment-year ----
 # num_naive_seg_road_crossings_num_roads_months_years has fields to filter just naively crossed segments prior to counting monthly crossings
 # but for the current analysis plan I'm counting monthly crossings for the entire naively crossed road
 # could also 
 
 
+# first by segment-lion-month level ----
 # now calculate monthly crossings of just the naively crossed roads. this is the filtering level I'm using in the analysis
 monthly_seg_crossings_naive_roads_only <- num_naive_seg_road_crossings_num_roads_months_years %>% 
   filter(num.naive.roads < 3, # just want steps that crossed 1 or 2 roads 
@@ -246,9 +250,6 @@ monthly_seg_crossings_naive_roads_only <- num_naive_seg_road_crossings_num_roads
             which.steps = paste(crossing.step, collapse = "; ")
   ) %>% 
   ungroup() 
-
-
-# to analyze just naively crossed segments, do the same as above but filter num.naive.seg.crossings == 1 instead of num.naive.road.crossings
 
 
 # next need to add all the non-crossed segments for each lion each month
@@ -289,7 +290,7 @@ monthly_seg_crossings_naive_roads_only_0s <- monthly_seg_crossings_naive_roads_o
 month_years_per_lion <- distinct(puma_month_year, animal.id, month, year) %>% count(animal.id) %>% rename(num.month.years = n)
 segs_per_lion <- seg_hr %>% count(animal.id) %>% rename(num.segs = n)
 
-# in this df,all expected/calc and actual pairs should match
+# in this df, all expected/calc and actual pairs should match
 full_join(month_years_per_lion, segs_per_lion) %>% 
   filter(animal.id %in% analysis_pumas, 
          !animal.id %in% few_crossings_pumas) %>% 
@@ -305,17 +306,80 @@ full_join(month_years_per_lion, segs_per_lion) %>%
   mutate(total.actual.month.segs = nrow(seg_crossing_sums_naive_roads_only_0s))
 
 
-
-
-
-
 # if they do, save 
 
 saveRDS(monthly_seg_crossings_naive_roads_only_0s, here("data/analysis_inputs/monthly_seg_crossings_naive_roads_only_0s"))
 
+# segment-lion-year level ----
+
+# now calculate annual crossings of just the naively crossed roads. this is the filtering level I'm using in the analysis
+annual_seg_crossings_naive_roads_only <- num_naive_seg_road_crossings_num_roads_months_years %>% 
+  filter(num.naive.roads < 3, # just want steps that crossed 1 or 2 roads 
+         num.naive.road.crossings == 1) %>%  # and only want roads that were crossed once per step
+  group_by(animal.id, year, seg.label) %>% 
+  summarise(annual.seg.raw.crossing = sum(raw.crossing), # not sum(num.naive.seg.crossings)
+            annual.seg.wt.crossing = sum(bbmm.segment.weight), # not sum(wt.naive.seg.crossings)
+            num.crossing.steps = n(), # including num.crossing.steps and which.steps for checking, these aren't actually needed for the analysis
+            which.steps = paste(crossing.step, collapse = "; ")
+  ) %>% 
+  ungroup() 
+
+# adding 0 crossed segments for each year and lion
+
+full_seg_puma_year <- full_seg_puma_month_year %>% 
+  group_by(seg.label, animal.id, year, expected.seg) %>% 
+  summarise(num.months = n()) %>% 
+  ungroup()
+
+annual_seg_crossings_naive_roads_only_0s <- annual_seg_crossings_naive_roads_only %>% 
+  filter(animal.id %in% analysis_pumas, 
+         !animal.id %in% few_crossings_pumas) %>% 
+  right_join(full_seg_puma_year) %>% # now adding all segments for each lion for each year to get 0-crossed segments
+  mutate(annual.seg.raw.crossing = replace_na(annual.seg.raw.crossing, 0),
+         annual.seg.wt.crossing = replace_na(annual.seg.wt.crossing, 0),
+         num.crossing.steps = replace_na(num.crossing.steps, 0),
+         num.months = replace_na(num.months, 0)) %>% 
+  arrange(animal.id, year, seg.label) %>% 
+  select(animal.id, year, seg.label, which.steps, num.months, annual.seg.wt.crossing, annual.seg.raw.crossing, num.crossing.steps, expected.seg)
+
+saveRDS(annual_seg_crossings_naive_roads_only_0s, here("data/analysis_inputs/annual_seg_crossings_naive_roads_only_0s"))
 
 
+# segment-year level ----
+# now calculate annual crossings of just the naively crossed roads with all lions combined. this is the filtering level I'm using in the analysis
+annual_seg_crossings_naive_roads_only_lions_combined <- num_naive_seg_road_crossings_num_roads_months_years %>% 
+  filter(animal.id %in% analysis_pumas, 
+         !animal.id %in% few_crossings_pumas) %>% 
+  filter(num.naive.roads < 3, # just want steps that crossed 1 or 2 roads 
+         num.naive.road.crossings == 1) %>%  # and only want roads that were crossed once per step
+  group_by(year, seg.label) %>% 
+  summarise(annual.seg.raw.crossing = sum(raw.crossing), # not sum(num.naive.seg.crossings)
+            annual.seg.wt.crossing = sum(bbmm.segment.weight), # not sum(wt.naive.seg.crossings)
+            num.crossing.steps = n(), # including num.crossing.steps and which.steps for checking, these aren't actually needed for the analysis
+            which.steps = paste(crossing.step, collapse = "; ")
+  ) %>% 
+  ungroup() 
 
+full_seg_year <- full_seg_puma_month_year %>% 
+  group_by(seg.label, year, expected.seg) %>% 
+  summarise(which.lions = paste(unique(animal.id), collapse = "; "),
+            num.lions = n_distinct(animal.id),
+            num.lion.months = n()) %>% 
+  ungroup()
+
+
+annual_seg_crossings_naive_roads_only_0s_lions_combined <- annual_seg_crossings_naive_roads_only_lions_combined %>% 
+  right_join(full_seg_year) %>% # now adding all segments for each lion for each year to get 0-crossed segments
+  mutate(annual.seg.raw.crossing = replace_na(annual.seg.raw.crossing, 0),
+         annual.seg.wt.crossing = replace_na(annual.seg.wt.crossing, 0),
+         num.crossing.steps = replace_na(num.crossing.steps, 0),
+         num.lion.months = replace_na(num.lion.months, 0),
+         num.lions = replace_na(num.lions, 0)) %>% 
+  arrange(year, seg.label) %>% 
+  select(year, seg.label, which.steps, num.lion.months, num.lions, annual.seg.wt.crossing, annual.seg.raw.crossing, num.crossing.steps, expected.seg)
+
+
+saveRDS(annual_seg_crossings_naive_roads_only_0s_lions_combined, here("data/analysis_inputs/annual_seg_crossings_naive_roads_only_0s_lions_combined"))
 
 
 # this is scaled to the average crossings per month across all lions, and also has the number of different lions using each segment
