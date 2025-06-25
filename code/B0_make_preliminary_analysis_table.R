@@ -35,3 +35,13 @@ count(full_lion_year_month_seg, animal.id, seg.label, year, month) %>% filter(n 
 
 
 saveRDS(full_lion_year_month_seg, here("data/full_lion_year_month_seg"))
+
+
+# also make simpler all segment X year combos for analysis without animal id
+# want to include lion.months for weighting
+
+seg_years <- full_lion_year_month_seg %>% 
+  mutate(region = ifelse(animal.id %in% c("P31", "P39"), "West", "East")) %>% 
+  group_by(seg.label, year, region) %>% 
+  summarise(lion.months = n(),
+            num.lions = n_distinct(animal.id))
