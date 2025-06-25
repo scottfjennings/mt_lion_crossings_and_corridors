@@ -56,7 +56,11 @@ composition_scale_df <- composition_scale_df_pre %>%
 
 # remove segments that are in continuous developed areas
 composition_scale_df <- composition_scale_df %>% 
-  filter(prop.seg.in.dev50 > 0) 
+  filter(prop.seg.in.dev50 == 0) 
+
+saveRDS(composition_scale_df, here("data/analysis_inputs/composition_scale_df"))
+
+composition_scale_df <- readRDS(here("data/analysis_inputs/composition_scale_df"))
 
 
 # all 3 should be all true because adding all_hr_road_habitat_95 should just add the habitat values at the 10 buffers for each lion X segment X year that exists in composition_scale_df
@@ -119,17 +123,43 @@ fit_scale_mixed_mods_offset <- function(zhab) {
 
 dev_scale_mods_offset <- fit_scale_mixed_mods_offset("mean.dev")
 dev_scale_mods_offset$aic
-summary(dev_scale_mods_offset$mean.dev30)
-# 30m best for mean.dev (june 2025)
-# 150m is the largest buffer with dAICc < 2. going to use that too
 
+
+
+summary(dev_scale_mods_offset$mean.dev30)
+# 300m best for mean.dev (june 2025)
+# but 30m has max dAICc at only 0.9, so going to use 30 and 300 for dev
+#Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#10 mean.dev300 3 16417.26      0.000    1.000  0.116 -8205.631 0.1156502
+#3   mean.dev90 3 16417.28      0.019    0.990  0.115 -8205.640 0.2301951
+#4  mean.dev120 3 16417.36      0.100    0.951  0.110 -8205.680 0.3402303
+#2   mean.dev60 3 16417.37      0.110    0.947  0.109 -8205.685 0.4497027
+#9  mean.dev270 3 16417.40      0.135    0.935  0.108 -8205.698 0.5578103
+#8  mean.dev240 3 16417.53      0.267    0.875  0.101 -8205.764 0.6589984
+#5  mean.dev150 3 16417.75      0.485    0.785  0.091 -8205.873 0.7497382
+#7  mean.dev210 3 16417.75      0.492    0.782  0.090 -8205.877 0.8401630
+#6  mean.dev180 3 16417.82      0.557    0.757  0.088 -8205.909 0.9277155
+#1   mean.dev30 3 16418.20      0.940    0.625  0.072 -8206.101 1.0000000
 
 treshr_scale_mods_offset <- fit_scale_mixed_mods_offset("mean.tre.shr")
 treshr_scale_mods_offset$aic
+#Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#7  mean.tre.shr210 3 16418.07      0.000    1.000  0.107 -8206.036 0.1074743
+#8  mean.tre.shr240 3 16418.07      0.000    1.000  0.107 -8206.036 0.2149423
+#6  mean.tre.shr180 3 16418.09      0.014    0.993  0.107 -8206.043 0.3216872
+#5  mean.tre.shr150 3 16418.12      0.049    0.976  0.105 -8206.061 0.4265419
+#9  mean.tre.shr270 3 16418.16      0.084    0.959  0.103 -8206.078 0.5295989
+#4  mean.tre.shr120 3 16418.20      0.129    0.937  0.101 -8206.101 0.6303482
+#10 mean.tre.shr300 3 16418.22      0.149    0.928  0.100 -8206.111 0.7300948
+#3   mean.tre.shr90 3 16418.32      0.248    0.883  0.095 -8206.160 0.8250145
+#2   mean.tre.shr60 3 16418.45      0.380    0.827  0.089 -8206.226 0.9138708
+#1   mean.tre.shr30 3 16418.51      0.443    0.801  0.086 -8206.258 1.0000000
+
+
 summary(treshr_scale_mods_offset$mean.tre.shr120)
 
-# 120m best (barely) for tre.shr (june 2025)
-# but really, all scales are approximately equally supported: max aic wt = .111, min = 0.089 with dAICc = 0.455
+# 210m best (barely) for tre.shr (june 2025)
+# but really, all scales are approximately equally supported: max aic wt = .107, min = 0.086 with dAICc = 0.443
 # going to use use 30m and 300m in analysis to allow possible new relative importance to emerge when other varbs are added.
 
 
