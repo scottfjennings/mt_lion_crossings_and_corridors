@@ -1,87 +1,164 @@
 
 
 # this is the first step for the main analysis
-# this must be run before any B4_... scripts, EXCEPT for B4_analyze_crossings_2step.R which uses a slightly different crossing_analysis_table and different model structures (different spatial scales for cev and tre.shr)
+# this must be run before any other CX_... scripts
 
 # here the final analysis table is built up by combining all predictors and response, final filtering
-# also here is where the standard fixed effect model structure is set for use in any of the B4_... model fitting scripts
-
-
 
 
 
 library(tidyverse)
 library(here)
-library(lme4)
-library(AICcmodavg)
-library(MuMIn)
+library(sf)
 library(readxl)
-#library(merTools)
-#library(sf)
-
 
 
 source(here("code/helper_data.R"))
 
+
+# lion sex ----
 puma_sexes <- read_xlsx("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/COLLAR DATE INFO_31Dec2023.xlsx")
 
 names(puma_sexes) <- tolower(names(puma_sexes))
 
 puma_sexes <- puma_sexes %>%
   rename("animal.id" = `animal id`) %>% 
-  distinct(animal.id, sex)
+  distinct(animal.id, sex)   %>% 
+  filter(animal.id %in% analysis_pumas,
+         !animal.id %in% few_crossings_pumas,
+         !animal.id %in% hr_exclude_pumas)
 
-# final data prep ----
-all_hr_road_habitat_df <- readRDS(here("data/analysis_inputs/all_hr_road_habitat_df")) %>% 
-  filter(!animal.id %in% hr_exclude_pumas,
+
+# full lion year month segment for just segmenst outside continuous development. this used to double check all the right segments move forward to the main analysis ----
+analysis_lion_year_month_seg <- readRDS(here("data/full_lion_year_month_seg")) %>% 
+  full_join(readRDS(here("data/hr_segments_prop_in_developed"))) %>% 
+  data.frame() %>%  
+  filter(prop.seg.in.dev50 == 0) %>% 
+  select(animal.id, seg.label, year, month) %>% 
+  filter(animal.id %in% analysis_pumas,
+         !animal.id %in% few_crossings_pumas,
+         !animal.id %in% hr_exclude_pumas,
+         !seg.label %in% p31_exclude_segments)
+  
+
+# full lion year segment for just segments outside continuous development. this used to double check all the right segments move forward to the main analysis ----
+analysis_lion_year_seg <- readRDS(here("data/full_lion_year_month_seg")) %>% 
+  group_by(animal.id, year, seg.label) %>% 
+  summarise(num.months = n()) %>% 
+  full_join(readRDS(here("data/hr_segments_prop_in_developed"))) %>% 
+  data.frame() %>%  
+  filter(prop.seg.in.dev50 == 0) %>% 
+  select(animal.id, seg.label, year, num.months) %>% 
+  filter(animal.id %in% analysis_pumas,
+         !animal.id %in% few_crossings_pumas,
+         !animal.id %in% hr_exclude_pumas,
          !seg.label %in% p31_exclude_segments)
 
-best_hab <- full_join(all_hr_road_habitat_df %>% 
-                        filter(buff == 60) %>% 
-                        select(seg.label, animal.id, year, dev.60 = mean.dev),
-                      all_hr_road_habitat_df %>% 
-                        filter(buff == 300) %>% 
-                        select(seg.label, animal.id, year, tre.shr.300 = mean.tre.shr))
+# habitat composition. veg and development ----
+# using 30m and 300m buffer distances 
+# by month
+monthly_analysis_hab_composition <- readRDS(here("data/analysis_inputs/composition_scale_df")) %>% 
+  pivot_longer(cols = contains("mean."), names_to = "varb") %>% 
+  mutate(varb.buff = paste(varb, buff, sep = ".")) %>% 
+  filter(varb.buff %in% c("mean.tre.shr.210", "mean.dev.300")) %>% 
+  pivot_wider(id_cols = c(animal.id, seg.label, year, month, monthly.seg.raw.crossing, monthly.seg.wt.crossing), names_from = varb.buff, values_from = value) %>% 
+  right_join(analysis_lion_year_month_seg)
+# by year
+annual_analysis_hab_composition <- readRDS(here("data/analysis_inputs/composition_scale_df")) %>% 
+  pivot_longer(cols = contains("mean."), names_to = "varb") %>% 
+  mutate(varb.buff = paste(varb, buff, sep = ".")) %>% 
+  filter(varb.buff %in% c("mean.tre.shr.210", "mean.dev.300")) %>% 
+  pivot_wider(id_cols = c(animal.id, seg.label, year, month, monthly.seg.raw.crossing, monthly.seg.wt.crossing), names_from = varb.buff, values_from = value) %>%
+  group_by(animal.id, year, seg.label, mean.tre.shr.210, mean.dev.300) %>% 
+  summarise(annual.seg.raw.crossing = sum(monthly.seg.raw.crossing),
+            annual.seg.wt.crossing = sum(monthly.seg.wt.crossing)) %>% 
+  ungroup() %>% 
+  right_join(analysis_lion_year_seg)
+
+# do any segments have missing composition values?
+monthly_analysis_hab_composition %>% summarise(across(starts_with("mean."), ~ any(is.na(.)))) # should all be FALSE
+annual_analysis_hab_composition %>% summarise(across(starts_with("mean."), ~ any(is.na(.)))) # should all be FALSE
 
 
-crossing_analysis_table <- readRDS(here("data/analysis_inputs/seg_crossing_sums_naive_roads_only")) %>% 
-  filter(!animal.id %in% hr_exclude_pumas) %>% 
-  left_join(puma_sexes) %>% 
-  inner_join(best_hab) %>% 
+# habitat configuration. cohesion ----
+# by month
+monthly_analysis_hab_configuration <- readRDS(here("data/analysis_inputs/configuration_scale_df")) %>% 
+  filter(buff == 200, forest.threshold == 50) %>% 
+  right_join(analysis_lion_year_month_seg) %>% 
+  rename(cohesion.200.50 = cohesion) %>% # renaming to include buff ad threshold as a reminder
+  select(animal.id, year, month, seg.label, cohesion.200.50, monthly.seg.raw.crossing, monthly.seg.wt.crossing, patch.touches.road, np)
+# by year
+annual_analysis_hab_configuration <- readRDS(here("data/analysis_inputs/configuration_scale_df")) %>% 
+  filter(buff == 200, forest.threshold == 50) %>% 
+  right_join(analysis_lion_year_seg) %>% 
+  rename(cohesion.200.50 = cohesion) %>% # renaming to include buff ad threshold as a reminder
+  select(animal.id, year, month, seg.label, cohesion.200.50, monthly.seg.raw.crossing, monthly.seg.wt.crossing, patch.touches.road, np) %>% 
+  group_by(animal.id, year, seg.label, cohesion.200.50, patch.touches.road, np) %>% 
+  summarise(annual.seg.raw.crossing = sum(monthly.seg.raw.crossing),
+            annual.seg.wt.crossing = sum(monthly.seg.wt.crossing)) %>% 
+  ungroup() 
+
+# do any segments have missing cohesion values?
+monthly_analysis_hab_configuration %>% filter(is.na(cohesion.200.50)) %>% nrow()
+annual_analysis_hab_configuration %>% filter(is.na(cohesion.200.50)) %>% nrow()
+
+
+monthly_analysis_table <- full_join(monthly_analysis_hab_configuration, monthly_analysis_hab_composition)%>% 
   left_join(readRDS(here("data/analysis_inputs/streams_per_segment"))) %>% 
-  filter(!animal.id %in% hr_exclude_pumas,
-         !seg.label %in% p31_exclude_segments,
-         !(is.na(dev.60) | is.na(tre.shr.300))) %>% # still a few lingering segments along the coast with NA habitat values
-  filter(!class %in% c("Access Road", # only 5 total segments and none in any male home ranges so they break the 3 way interaction models
-                       "Freeway"), # no actual crossings of freeway
-         num.creek < 6) %>%  # only 7 segments have 6 or more crossings  
-  mutate(#class = factor(class, levels = c("Local", "Collector", "Arterial", "Highway")),
-         class = ifelse(class == "Local", "Local", "Not local"),
-         crossed.bin = as.numeric(seg.wt.crossing > 0)) %>% 
-  filter(!animal.id %in% few_crossings_pumas)
+  left_join(puma_sexes) %>% 
+  left_join(readRDS(here("data/seg_midpoints_road_class")))
+
+annual_analysis_table <- full_join(annual_analysis_hab_configuration, annual_analysis_hab_composition)%>% 
+  left_join(readRDS(here("data/analysis_inputs/streams_per_segment"))) %>% 
+  left_join(puma_sexes) %>% 
+  left_join(readRDS(here("data/seg_midpoints_road_class")))
+
+
+monthly_analysis_table %>% summarise(across(c(starts_with("mean."), cohesion.200.50, num.creek, sex, class), ~ any(is.na(.)))) # all should be FALSE
+annual_analysis_table %>% summarise(across(c(starts_with("mean."), cohesion.200.50, num.creek, sex, class), ~ any(is.na(.)))) # all should be FALSE
+
+
+monthly_analysis_table %>% distinct(seg.label, class) %>% count(class)
+monthly_analysis_table %>% distinct(animal.id, seg.label, num.creek) %>% count(animal.id, num.creek) %>% filter(num.creek > 5)
+
+main_analysis_table %>%
+  filter(num.creek.bin == 3, monthly.seg.raw.crossing > 0) %>%
+  ggplot(aes(x = monthly.seg.raw.crossing, fill = factor(num.creek))) +
+  geom_histogram(binwidth = 1, boundary = 0, color = "black", position = "stack") +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  labs(x = "Monthly Segment Crossings", y = "Count", fill = "Number of Creeks")
 
 
 
+monthly_analysis_table <- monthly_analysis_table %>% 
+  mutate(class = ifelse(class == "Access Road", "Local", class)) %>%  # only 1 segment and only in P31's HR
+  mutate(across(starts_with("mean."), ~ .x * 100)) %>% 
+  mutate(class = relevel(factor(class), ref = "Local")) # using Local as the reference level because it is most common, is possibly more likely to be crossed, adn becasue it will be handy to compare the likely busier roads to Local
+
+
+saveRDS(monthly_analysis_table, here("data/analysis_inputs/monthly_analysis_table"))
+
+# hoping that agregating crossings to annual level may help zero inflation issues
+
+annual_analysis_table <- annual_analysis_table %>% 
+  mutate(class = ifelse(class == "Access Road", "Local", class)) %>%  # only 1 segment and only in P31's HR
+  mutate(across(starts_with("mean."), ~ .x * 100)) %>% 
+  mutate(class = relevel(factor(class), ref = "Local")) # using Local as the reference level because it is most common, is possibly more likely to be crossed, adn becasue it will be handy to compare the likely busier roads to Local
+
+
+saveRDS(annual_analysis_table, here("data/analysis_inputs/annual_analysis_table"))
 
 
 # optional data checking plots and summaries ----
 
-crossing_analysis_table %>% 
-  select(seg.label, class) %>% 
-  distinct() %>%
-  left_join(readRDS(here("data/all_hr_road_habitat")) %>% select(seg.label, geometry)) %>%
-  sf::st_write(here("data/shapefiles/predictor_variable_checking/class.shp"), append = FALSE)
 
 
-crossing_analysis_table %>% 
-  #filter(seg.wt.crossing > 0) %>% 
+main_analysis_table %>%
+  pivot_longer(cols = c(mean.tre.shr.210, mean.dev.300, cohesion.200.50)) %>% 
   ggplot() +
-  geom_density(aes(x = tre.shr.300)) +
-  geom_density(aes(x = dev.60), color = "red") +
-  xlim(0, 1)
-  facet_wrap(~as.factor(num.creek))
+  geom_density(aes(x = value, color = name)) +
+  facet_wrap(~name)
 
-  filter(crossing_analysis_table, seg.wt.crossing > 0, dev.60 < .25) %>% nrow()
   
 
   # any NA
@@ -119,58 +196,247 @@ crossing_analysis_table %>%
     cor()
   
   
-# load candidate model fixed effects structure  ----
-# load these here to use in multiple B4_... scripts. Easier to change candidate set in only one place than many.   
+  # define models
+  # response is monthly.seg.raw.crossing
+  # using offset(log(monthly.seg.wt.crossing + 0.0001))
+  # including random effect (1|animal.id)
   
-# not enough data for any num.creek interactions  
-model_formulas_1step <- list(
-  treshr300 = "tre.shr.300",
-  dev60 = "dev.60",
-  creek = "num.creek",
-  class = "class",
-  sex = "sex",
+  # fixed variables
+  # cohesion.200.50
+  # mean.tre.shr.210
+  # mean.dev.300
+  # num.creek.bin
+  # class
+  # sex
   
-  # 2 way additive
-  treshr300_creek = "tre.shr.300 + num.creek",
-  dev60_creek = "dev.60 + num.creek",
-  treshr300_sex = "tre.shr.300 + sex",
-  dev60_sex = "dev.60 + sex",
-  treshr300_class = "tre.shr.300 + class",
-  dev60_class = "dev.60 + class",
-  creek_sex = "num.creek + sex",
-  class_sex = "class + sex",
-  class_creek = "class + num.creek",
+  # code to generate exploratory models ----
+  # Define variable sets
+  core_vars <- c("cohesion.200.50", "patch.touches.road", "mean.tre.shr.210", "mean.dev.300", 
+                 "num.creek.bin", "class", "sex")
   
-  # 3 way additive
-  treshr300_creek_class = "tre.shr.300 + num.creek + class",
-  treshr300_creek_sex = "tre.shr.300 + num.creek + sex",
-  treshr300_class_sex = "tre.shr.300 + class + sex",
-  dev60_creek_class = "dev.60 + num.creek + class",
-  dev60_creek_sex = "dev.60 + num.creek + sex",
-  dev60_class_sex = "dev.60 + class + sex",
-  creek_class_sex = "num.creek + class + sex",
+  restricted_set <- c("mean.tre.shr.210", "mean.dev.300", "cohesion.200.50")
   
-  # 2 way interactions
-  treshr300.creek = "tre.shr.300 * num.creek",
-  dev60.creek = "dev.60 * num.creek",
-  treshr300.sex = "tre.shr.300 * sex",
-  dev60.sex = "dev.60 * sex",
-  treshr300.class = "tre.shr.300 * class",
-  dev60.class = "dev.60 * class",
-  creek.sex = "num.creek * sex",
-  creek.class = "num.creek * class",
-  class.sex = "class * sex",
+  # All combinations of 1–6 predictors
+  model_combos <- unlist(lapply(1:length(core_vars), function(k) {
+    combn(core_vars, k, simplify = FALSE)
+  }), recursive = FALSE)
   
-  # 3 way interactions
-  treshr300.creek.class = "tre.shr.300 * num.creek * class",
-  treshr300.creek.sex = "tre.shr.300 * num.creek * sex",
-  treshr300.class.sex = "tre.shr.300 * class * sex",
-  dev60.creek.class = "dev.60 * num.creek * class",
-  dev60.creek.sex = "dev.60 * num.creek * sex",
-  dev60.class.sex = "dev.60 * class * sex",
-  creek.class.sex = "num.creek * class * sex",
+  # Filter to enforce only zero or one restricted variable per model
+  valid_combos <- model_combos %>%
+    keep(~ sum(.x %in% restricted_set) <= 1)
   
-  # Null
-  intercept = "1"
-)
+  # Add patch.touches.road only if cohesion.200.50 is present
+  expanded_combos <- map(valid_combos, function(vars) {
+    if ("cohesion.200.50" %in% vars) {
+      list(vars, c(vars, "patch.touches.road"))
+    } else {
+      list(vars)
+    }
+  }) %>% flatten()
+  
+  # Create formula strings with response variable
+  formula_strs <- map_chr(expanded_combos, ~ paste(paste(.x, collapse = " + ")))
+  formula_strs <- map_chr(valid_combos, ~ paste(paste(.x, collapse = " + ")))
+  
+  # Name them
+  names(formula_strs) <- map_chr(valid_combos, ~ paste(paste(.x, collapse = "_")))
+  names(formula_strs) <- str_replace_all(names(formula_strs), "cohesion.200.50", "cohesion")
+  names(formula_strs) <- str_replace_all(names(formula_strs), "mean.dev.300", "dev")
+  names(formula_strs) <- str_replace_all(names(formula_strs), "mean.tre.shr.210", "woody")
+  names(formula_strs) <- str_replace_all(names(formula_strs), "num.creek.bin", "creek")
+  names(formula_strs) <- str_replace_all(names(formula_strs), "patch.touches.road", "patchrd")
+  
+  bind_cols(names(formula_strs), formula_strs) %>% print(n = Inf)
+  
+  # Generate named list as character vector definitions
+  named_list_code <- map2_chr(
+    names(formula_strs), formula_strs,
+    ~ paste0("  ", .x, ' = "', .y, '"')
+  )
+  
+  # Wrap in list() and collapse
+  cat("exploration_model_formulas <- list(\n",
+      paste(named_list_code, collapse = ",\n"),
+      "\n)")
+  
+  
+  
+  
+  
+  
+  
+
+  
+  # defining structures for exploratory models ----
+  # this is the exploratory candidate list generated by the chunk above
+  
+  exploration_model_formulas <- list(
+    cohesion = "cohesion.200.50",
+   # patchrd = "patch.touches.road",
+    woody = "mean.tre.shr.210",
+    dev = "mean.dev.300",
+    creek = "num.creek.bin",
+    class = "class",
+    sex = "sex",
+    #cohesion_patchrd = "cohesion.200.50 + patch.touches.road",
+    cohesion_creek = "cohesion.200.50 + num.creek.bin",
+    cohesion_class = "cohesion.200.50 + class",
+    cohesion_sex = "cohesion.200.50 + sex",
+    #patchrd_woody = "patch.touches.road + mean.tre.shr.210",
+    #patchrd_dev = "patch.touches.road + mean.dev.300",
+    #patchrd_creek = "patch.touches.road + num.creek.bin",
+    #patchrd_class = "patch.touches.road + class",
+    #patchrd_sex = "patch.touches.road + sex",
+    woody_creek = "mean.tre.shr.210 + num.creek.bin",
+    woody_class = "mean.tre.shr.210 + class",
+    woody_sex = "mean.tre.shr.210 + sex",
+    dev_creek = "mean.dev.300 + num.creek.bin",
+    dev_class = "mean.dev.300 + class",
+    dev_sex = "mean.dev.300 + sex",
+    creek_class = "num.creek.bin + class",
+    creek_sex = "num.creek.bin + sex",
+    class_sex = "class + sex",
+    #cohesion_patchrd_creek = "cohesion.200.50 + patch.touches.road + num.creek.bin",
+    #cohesion_patchrd_class = "cohesion.200.50 + patch.touches.road + class",
+    #cohesion_patchrd_sex = "cohesion.200.50 + patch.touches.road + sex",
+    cohesion_creek_class = "cohesion.200.50 + num.creek.bin + class",
+    cohesion_creek_sex = "cohesion.200.50 + num.creek.bin + sex",
+    cohesion_class_sex = "cohesion.200.50 + class + sex",
+    #patchrd_woody_creek = "patch.touches.road + mean.tre.shr.210 + num.creek.bin",
+    #patchrd_woody_class = "patch.touches.road + mean.tre.shr.210 + class",
+    #patchrd_woody_sex = "patch.touches.road + mean.tre.shr.210 + sex",
+    #patchrd_dev_creek = "patch.touches.road + mean.dev.300 + num.creek.bin",
+    #patchrd_dev_class = "patch.touches.road + mean.dev.300 + class",
+    #patchrd_dev_sex = "patch.touches.road + mean.dev.300 + sex",
+    #patchrd_creek_class = "patch.touches.road + num.creek.bin + class",
+    #patchrd_creek_sex = "patch.touches.road + num.creek.bin + sex",
+    #patchrd_class_sex = "patch.touches.road + class + sex",
+    woody_creek_class = "mean.tre.shr.210 + num.creek.bin + class",
+    woody_creek_sex = "mean.tre.shr.210 + num.creek.bin + sex",
+    woody_class_sex = "mean.tre.shr.210 + class + sex",
+    dev_creek_class = "mean.dev.300 + num.creek.bin + class",
+    dev_creek_sex = "mean.dev.300 + num.creek.bin + sex",
+    dev_class_sex = "mean.dev.300 + class + sex",
+    creek_class_sex = "num.creek.bin + class + sex",
+    #cohesion_patchrd_creek_class = "cohesion.200.50 + patch.touches.road + num.creek.bin + class",
+    #cohesion_patchrd_creek_sex = "cohesion.200.50 + patch.touches.road + num.creek.bin + sex",
+    #cohesion_patchrd_class_sex = "cohesion.200.50 + patch.touches.road + class + sex",
+    cohesion_creek_class_sex = "cohesion.200.50 + num.creek.bin + class + sex",
+    #patchrd_woody_creek_class = "patch.touches.road + mean.tre.shr.210 + num.creek.bin + class",
+    #patchrd_woody_creek_sex = "patch.touches.road + mean.tre.shr.210 + num.creek.bin + sex",
+    #patchrd_woody_class_sex = "patch.touches.road + mean.tre.shr.210 + class + sex",
+    #patchrd_dev_creek_class = "patch.touches.road + mean.dev.300 + num.creek.bin + class",
+    #patchrd_dev_creek_sex = "patch.touches.road + mean.dev.300 + num.creek.bin + sex",
+    #patchrd_dev_class_sex = "patch.touches.road + mean.dev.300 + class + sex",
+    #patchrd_creek_class_sex = "patch.touches.road + num.creek.bin + class + sex",
+    woody_creek_class_sex = "mean.tre.shr.210 + num.creek.bin + class + sex",
+    dev_creek_class_sex = "mean.dev.300 + num.creek.bin + class + sex",
+    cohesion_patchrd_creek_class_sex = "cohesion.200.50 + patch.touches.road + num.creek.bin + class + sex",
+    #patchrd_woody_creek_class_sex = "patch.touches.road + mean.tre.shr.210 + num.creek.bin + class + sex",
+    #patchrd_dev_creek_class_sex = "patch.touches.road + mean.dev.300 + num.creek.bin + class + sex", 
+    
+    intercept = "1"
+  )
+  
+  
+  
+  exploration_model_formulas <- list(
+    cohesion = "cohesion.200.50",
+    patchrd = "patch.touches.road",
+    woody = "mean.tre.shr.210",
+    dev = "mean.dev.300",
+    creek = "num.creek.bin",
+    class = "class",
+    sex = "sex",
+    cohesion_patchrd = "cohesion.200.50 + patch.touches.road",
+    cohesion_woody = "cohesion.200.50 + mean.tre.shr.210",
+    cohesion_dev = "cohesion.200.50 + mean.dev.300",
+    cohesion_creek = "cohesion.200.50 + num.creek.bin",
+    cohesion_class = "cohesion.200.50 + class",
+    cohesion_sex = "cohesion.200.50 + sex",
+    patchrd_woody = "patch.touches.road + mean.tre.shr.210",
+    patchrd_dev = "patch.touches.road + mean.dev.300",
+    patchrd_creek = "patch.touches.road + num.creek.bin",
+    patchrd_class = "patch.touches.road + class",
+    patchrd_sex = "patch.touches.road + sex",
+    woody_creek = "mean.tre.shr.210 + num.creek.bin",
+    woody_class = "mean.tre.shr.210 + class",
+    woody_sex = "mean.tre.shr.210 + sex",
+    dev_creek = "mean.dev.300 + num.creek.bin",
+    dev_class = "mean.dev.300 + class",
+    dev_sex = "mean.dev.300 + sex",
+    creek_class = "num.creek.bin + class",
+    creek_sex = "num.creek.bin + sex",
+    class_sex = "class + sex",
+    cohesion_patchrd_woody = "cohesion.200.50 + patch.touches.road + mean.tre.shr.210",
+    cohesion_patchrd_dev = "cohesion.200.50 + patch.touches.road + mean.dev.300",
+    cohesion_patchrd_creek = "cohesion.200.50 + patch.touches.road + num.creek.bin",
+    cohesion_patchrd_class = "cohesion.200.50 + patch.touches.road + class",
+    cohesion_patchrd_sex = "cohesion.200.50 + patch.touches.road + sex",
+    cohesion_woody_creek = "cohesion.200.50 + mean.tre.shr.210 + num.creek.bin",
+    cohesion_woody_class = "cohesion.200.50 + mean.tre.shr.210 + class",
+    cohesion_woody_sex = "cohesion.200.50 + mean.tre.shr.210 + sex",
+    cohesion_dev_creek = "cohesion.200.50 + mean.dev.300 + num.creek.bin",
+    cohesion_dev_class = "cohesion.200.50 + mean.dev.300 + class",
+    cohesion_dev_sex = "cohesion.200.50 + mean.dev.300 + sex",
+    cohesion_creek_class = "cohesion.200.50 + num.creek.bin + class",
+    cohesion_creek_sex = "cohesion.200.50 + num.creek.bin + sex",
+    cohesion_class_sex = "cohesion.200.50 + class + sex",
+    patchrd_woody_creek = "patch.touches.road + mean.tre.shr.210 + num.creek.bin",
+    patchrd_woody_class = "patch.touches.road + mean.tre.shr.210 + class",
+    patchrd_woody_sex = "patch.touches.road + mean.tre.shr.210 + sex",
+    patchrd_dev_creek = "patch.touches.road + mean.dev.300 + num.creek.bin",
+    patchrd_dev_class = "patch.touches.road + mean.dev.300 + class",
+    patchrd_dev_sex = "patch.touches.road + mean.dev.300 + sex",
+    patchrd_creek_class = "patch.touches.road + num.creek.bin + class",
+    patchrd_creek_sex = "patch.touches.road + num.creek.bin + sex",
+    patchrd_class_sex = "patch.touches.road + class + sex",
+    woody_creek_class = "mean.tre.shr.210 + num.creek.bin + class",
+    woody_creek_sex = "mean.tre.shr.210 + num.creek.bin + sex",
+    woody_class_sex = "mean.tre.shr.210 + class + sex",
+    dev_creek_class = "mean.dev.300 + num.creek.bin + class",
+    dev_creek_sex = "mean.dev.300 + num.creek.bin + sex",
+    dev_class_sex = "mean.dev.300 + class + sex",
+    creek_class_sex = "num.creek.bin + class + sex",
+    cohesion_patchrd_woody_creek = "cohesion.200.50 + patch.touches.road + mean.tre.shr.210 + num.creek.bin",
+    cohesion_patchrd_woody_class = "cohesion.200.50 + patch.touches.road + mean.tre.shr.210 + class",
+    cohesion_patchrd_woody_sex = "cohesion.200.50 + patch.touches.road + mean.tre.shr.210 + sex",
+    cohesion_patchrd_dev_creek = "cohesion.200.50 + patch.touches.road + mean.dev.300 + num.creek.bin",
+    cohesion_patchrd_dev_class = "cohesion.200.50 + patch.touches.road + mean.dev.300 + class",
+    cohesion_patchrd_dev_sex = "cohesion.200.50 + patch.touches.road + mean.dev.300 + sex",
+    cohesion_patchrd_creek_class = "cohesion.200.50 + patch.touches.road + num.creek.bin + class",
+    cohesion_patchrd_creek_sex = "cohesion.200.50 + patch.touches.road + num.creek.bin + sex",
+    cohesion_patchrd_class_sex = "cohesion.200.50 + patch.touches.road + class + sex",
+    cohesion_woody_creek_class = "cohesion.200.50 + mean.tre.shr.210 + num.creek.bin + class",
+    cohesion_woody_creek_sex = "cohesion.200.50 + mean.tre.shr.210 + num.creek.bin + sex",
+    cohesion_woody_class_sex = "cohesion.200.50 + mean.tre.shr.210 + class + sex",
+    cohesion_dev_creek_class = "cohesion.200.50 + mean.dev.300 + num.creek.bin + class",
+    cohesion_dev_creek_sex = "cohesion.200.50 + mean.dev.300 + num.creek.bin + sex",
+    cohesion_dev_class_sex = "cohesion.200.50 + mean.dev.300 + class + sex",
+    cohesion_creek_class_sex = "cohesion.200.50 + num.creek.bin + class + sex",
+    patchrd_woody_creek_class = "patch.touches.road + mean.tre.shr.210 + num.creek.bin + class",
+    patchrd_woody_creek_sex = "patch.touches.road + mean.tre.shr.210 + num.creek.bin + sex",
+    patchrd_woody_class_sex = "patch.touches.road + mean.tre.shr.210 + class + sex",
+    patchrd_dev_creek_class = "patch.touches.road + mean.dev.300 + num.creek.bin + class",
+    patchrd_dev_creek_sex = "patch.touches.road + mean.dev.300 + num.creek.bin + sex",
+    patchrd_dev_class_sex = "patch.touches.road + mean.dev.300 + class + sex",
+    patchrd_creek_class_sex = "patch.touches.road + num.creek.bin + class + sex",
+    woody_creek_class_sex = "mean.tre.shr.210 + num.creek.bin + class + sex",
+    dev_creek_class_sex = "mean.dev.300 + num.creek.bin + class + sex",
+    cohesion_patchrd_woody_creek_class = "cohesion.200.50 + patch.touches.road + mean.tre.shr.210 + num.creek.bin + class",
+    cohesion_patchrd_woody_creek_sex = "cohesion.200.50 + patch.touches.road + mean.tre.shr.210 + num.creek.bin + sex",
+    cohesion_patchrd_woody_class_sex = "cohesion.200.50 + patch.touches.road + mean.tre.shr.210 + class + sex",
+    cohesion_patchrd_dev_creek_class = "cohesion.200.50 + patch.touches.road + mean.dev.300 + num.creek.bin + class",
+    cohesion_patchrd_dev_creek_sex = "cohesion.200.50 + patch.touches.road + mean.dev.300 + num.creek.bin + sex",
+    cohesion_patchrd_dev_class_sex = "cohesion.200.50 + patch.touches.road + mean.dev.300 + class + sex",
+    cohesion_patchrd_creek_class_sex = "cohesion.200.50 + patch.touches.road + num.creek.bin + class + sex",
+    cohesion_woody_creek_class_sex = "cohesion.200.50 + mean.tre.shr.210 + num.creek.bin + class + sex",
+    cohesion_dev_creek_class_sex = "cohesion.200.50 + mean.dev.300 + num.creek.bin + class + sex",
+    patchrd_woody_creek_class_sex = "patch.touches.road + mean.tre.shr.210 + num.creek.bin + class + sex",
+    patchrd_dev_creek_class_sex = "patch.touches.road + mean.dev.300 + num.creek.bin + class + sex",
+    cohesion_patchrd_woody_creek_class_sex = "cohesion.200.50 + patch.touches.road + mean.tre.shr.210 + num.creek.bin + class + sex",
+    cohesion_patchrd_dev_creek_class_sex = "cohesion.200.50 + patch.touches.road + mean.dev.300 + num.creek.bin + class + sex", 
+    
+    intercept = "1"
+  )
   
