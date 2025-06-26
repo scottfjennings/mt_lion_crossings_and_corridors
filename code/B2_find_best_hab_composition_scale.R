@@ -6,7 +6,6 @@ library(sp)
 library(lme4)
 library(gstat)
 library(AICcmodavg)
-library(spaMM)
 
 options(scipen = 999)
 source(here("code/helper_data.R"))
@@ -40,7 +39,7 @@ hr_segments_prop_in_developed <- readRDS(here("data/hr_segments_prop_in_develope
 #  select(animal.id, year, month, seg.label, which.steps, monthly.seg.wt.crossing, monthly.seg.raw.crossing)
 
 summed_crossings <- readRDS(here("data/analysis_inputs/annual_seg_crossings_naive_roads_only_0s_lions_combined")) %>%  
-    select(year, seg.label, which.steps, seg.wt = annual.seg.wt.crossing, raw.crossing = annual.seg.raw.crossing, num.lion.months, num.lions)
+    select(year, seg.label, which.steps, seg.wt = annual.seg.wt.crossing, raw.crossing = annual.seg.raw.crossing, num.lion.months, num.lions, num.lions.crossing)
   
 
 #puma_years <- seg_crossing_sums_naive_roads_only %>% 
@@ -102,16 +101,14 @@ all_hr_road_habitat_95 %>%
 #' 
 #'
 #' @examples
-fit_scale_mods_offset_logreg <- function(zhab) {
+fit_scale_mods_logreg <- function(zhab) {
   scales <- seq(30, 300, by = 30)
   
   zmods <- lapply(scales, function(s) {
     df_scale <- dplyr::filter(composition_scale_df, buff == s)
     glm(
       formula = as.formula(paste0(
-        "bin.crossing ~ ", zhab,
-        " + offset(log(seg.wt + 0.0001))"
-      )),
+        "bin.crossing ~ ", zhab)),
       data = df_scale,
       family = binomial
     )
@@ -129,37 +126,37 @@ fit_scale_mods_offset_logreg <- function(zhab) {
 
 
 
-dev_scale_mods_offset <- fit_scale_mods_offset("mean.dev")
-dev_scale_mods_offset$aic
+dev_scale_mods_logreg <- fit_scale_mods_logreg("mean.dev")
+dev_scale_mods_logreg$aic
 
-#Modnames K    AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#2   mean.dev60 2 113.152      0.000    1.000  0.123 -54.57509 0.1232000
-#3   mean.dev90 2 113.236      0.084    0.959  0.118 -54.61691 0.2413540
-#4  mean.dev120 2 113.345      0.193    0.908  0.112 -54.67154 0.3532265
-#5  mean.dev150 2 113.493      0.341    0.843  0.104 -54.74534 0.4571392
-#6  mean.dev180 2 113.605      0.453    0.798  0.098 -54.80136 0.5553913
-#7  mean.dev210 2 113.702      0.549    0.760  0.094 -54.84979 0.6489982
-#10 mean.dev300 2 113.704      0.551    0.759  0.094 -54.85082 0.7425085
-#9  mean.dev270 2 113.709      0.557    0.757  0.093 -54.85355 0.8357643
-#8  mean.dev240 2 113.719      0.566    0.753  0.093 -54.85820 0.9285876
-#1   mean.dev30 2 114.243      1.091    0.580  0.071 -55.12042 1.0000000
+#     Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#2   mean.dev60 2 6503.569      0.000    1.000  0.992 -3249.784 0.9923545
+#3   mean.dev90 2 6513.301      9.732    0.008  0.008 -3254.650 0.9999992
+#4  mean.dev120 2 6531.551     27.982    0.000  0.000 -3263.774 1.0000000
+#5  mean.dev150 2 6549.460     45.891    0.000  0.000 -3272.729 1.0000000
+#6  mean.dev180 2 6563.920     60.351    0.000  0.000 -3279.959 1.0000000
+#7  mean.dev210 2 6574.407     70.838    0.000  0.000 -3285.203 1.0000000
+#8  mean.dev240 2 6580.004     76.434    0.000  0.000 -3288.001 1.0000000
+#9  mean.dev270 2 6583.816     80.246    0.000  0.000 -3289.907 1.0000000
+#10 mean.dev300 2 6586.301     82.731    0.000  0.000 -3291.149 1.0000000
+#1   mean.dev30 2 6637.304    133.735    0.000  0.000 -3316.651 1.0000000
+ 
 
+treshr_scale_mods_logreg <- fit_scale_mods_logreg("mean.tre.shr")
+treshr_scale_mods_logreg$aic
 
-treshr_scale_mods_offset <- fit_scale_mods_offset("mean.tre.shr")
-treshr_scale_mods_offset$aic
-
-#Modnames K    AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#10 mean.tre.shr300 2 117.694      0.000    1.000  0.100 -56.84581 0.1003962
-#9  mean.tre.shr270 2 117.696      0.002    0.999  0.100 -56.84700 0.2006725
-#8  mean.tre.shr240 2 117.698      0.005    0.998  0.100 -56.84812 0.3008363
-#7  mean.tre.shr210 2 117.700      0.007    0.997  0.100 -56.84911 0.4009013
-#6  mean.tre.shr180 2 117.701      0.007    0.996  0.100 -56.84950 0.5009278
-#5  mean.tre.shr150 2 117.702      0.008    0.996  0.100 -56.84995 0.6009092
-#4  mean.tre.shr120 2 117.702      0.008    0.996  0.100 -56.85004 0.7008815
-#3   mean.tre.shr90 2 117.703      0.009    0.995  0.100 -56.85048 0.8008096
-#2   mean.tre.shr60 2 117.707      0.013    0.994  0.100 -56.85217 0.9005692
-#1   mean.tre.shr30 2 117.713      0.019    0.990  0.099 -56.85547 1.0000000
-
+#         Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#10 mean.tre.shr300 2 7042.009      0.000    1.000  0.104 -3519.003 0.1037675
+#9  mean.tre.shr270 2 7042.013      0.004    0.998  0.104 -3519.005 0.2073279
+#8  mean.tre.shr240 2 7042.051      0.042    0.979  0.102 -3519.025 0.3089325
+#7  mean.tre.shr210 2 7042.067      0.058    0.972  0.101 -3519.032 0.4097527
+#2   mean.tre.shr60 2 7042.071      0.062    0.970  0.101 -3519.034 0.5103626
+#6  mean.tre.shr180 2 7042.081      0.072    0.965  0.100 -3519.040 0.6104552
+#3   mean.tre.shr90 2 7042.103      0.094    0.954  0.099 -3519.050 0.7094579
+#5  mean.tre.shr150 2 7042.116      0.107    0.948  0.098 -3519.057 0.8078197
+#4  mean.tre.shr120 2 7042.128      0.119    0.942  0.098 -3519.063 0.9055776
+#1   mean.tre.shr30 2 7042.198      0.189    0.910  0.094 -3519.098 1.0000000
+ 
 
 
 #' fit_scale_mixed_mods
@@ -175,17 +172,16 @@ treshr_scale_mods_offset$aic
 #' 
 #'
 #' @examples
-fit_scale_mods_offset_negbin <- function(zhab) {
+fit_scale_mods_pois <- function(zhab) {
   scales <- seq(30, 300, by = 30)
   
   zmods <- lapply(scales, function(s) {
     df_scale <- dplyr::filter(composition_scale_df, buff == s)
-    MASS::glm.nb(
+    glm(
       formula = as.formula(paste0(
-        "raw.crossing ~ ", zhab,
-        " + offset(log(seg.wt + 0.0001))"
-      )),
-      data = df_scale
+        "num.lions.crossing ~ ", zhab)),
+      data = df_scale,
+      family = poisson
     )
   })
   
@@ -200,9 +196,37 @@ fit_scale_mods_offset_negbin <- function(zhab) {
 
 
 
+dev_scale_mods_pois <- fit_scale_mods_pois("mean.dev")
+dev_scale_mods_pois$aic
 
+#    Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#2   mean.dev60 2 9101.883      0.000    1.000  0.997 -4548.941 0.9966072
+#3   mean.dev90 2 9113.249     11.366    0.003  0.003 -4554.623 0.9999997
+#4  mean.dev120 2 9131.679     29.795    0.000  0.000 -4563.838 1.0000000
+#5  mean.dev150 2 9151.616     49.732    0.000  0.000 -4573.807 1.0000000
+#6  mean.dev180 2 9167.177     65.294    0.000  0.000 -4581.588 1.0000000
+#7  mean.dev210 2 9177.838     75.954    0.000  0.000 -4586.918 1.0000000
+#8  mean.dev240 2 9182.944     81.060    0.000  0.000 -4589.471 1.0000000
+#9  mean.dev270 2 9187.186     85.303    0.000  0.000 -4591.592 1.0000000
+#10 mean.dev300 2 9189.710     87.827    0.000  0.000 -4592.854 1.0000000
+#1   mean.dev30 2 9257.873    155.990    0.000  0.000 -4626.935 1.0000000
 
+summary(dev_scale_mods_pois$mean.dev60)
 
+treshr_scale_mods_pois <- fit_scale_mods_pois("mean.tre.shr")
+treshr_scale_mods_pois$aic
+
+#          Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#4  mean.tre.shr120 2 9610.093      0.000    1.000  0.105 -4803.045 0.1045062
+#5  mean.tre.shr150 2 9610.093      0.000    1.000  0.105 -4803.045 0.2090079
+#3   mean.tre.shr90 2 9610.129      0.037    0.982  0.103 -4803.064 0.3116101
+#1   mean.tre.shr30 2 9610.144      0.051    0.975  0.102 -4803.071 0.4134753
+#6  mean.tre.shr180 2 9610.147      0.055    0.973  0.102 -4803.073 0.5151558
+#7  mean.tre.shr210 2 9610.187      0.095    0.954  0.100 -4803.093 0.6148333
+#2   mean.tre.shr60 2 9610.198      0.105    0.949  0.099 -4803.098 0.7139961
+#8  mean.tre.shr240 2 9610.239      0.147    0.929  0.097 -4803.119 0.8111062
+#9  mean.tre.shr270 2 9610.295      0.202    0.904  0.094 -4803.146 0.9055615
+#10 mean.tre.shr300 2 9610.295      0.203    0.904  0.094 -4803.147 1.0000000
 
 # not worrying about spatial autocorrelation at this stage
 # for both compositions, all spatial scales dAICc < 2 when considering crossings for all animals lumped. 

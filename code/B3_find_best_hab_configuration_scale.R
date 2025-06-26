@@ -34,7 +34,7 @@ hr_segments_prop_in_developed <- readRDS(here("data/hr_segments_prop_in_develope
 #  select(animal.id, year, month, seg.label, which.steps, monthly.seg.wt.crossing, monthly.seg.raw.crossing)
 
 summed_crossings <- readRDS(here("data/analysis_inputs/annual_seg_crossings_naive_roads_only_0s_lions_combined")) %>%  
-  select(year, seg.label, which.steps, seg.wt = annual.seg.wt.crossing, raw.crossing = annual.seg.raw.crossing, num.lion.months, num.lions)
+  select(year, seg.label, which.steps, seg.wt = annual.seg.wt.crossing, raw.crossing = annual.seg.raw.crossing, num.lion.months, num.lions, num.lions.crossing)
 
 
 # adding hr_segments_prop_in_developed shouldn't change the number of rows since it is derived from segments_in_homerange
@@ -112,7 +112,7 @@ configuration_scale_df <- readRDS(here("data/analysis_inputs/configuration_scale
 #' @returns list with an element for each model and one for the AIC table comparing all models
 #'
 #' @examples
-fit_landscapemetrics_scale_mods_offset_logreg <- function(zhab) {
+fit_landscapemetrics_scale_mods_logreg <- function(zhab) {
   # Dynamically set the predictor variable in the formula
   
   ####################################
@@ -122,9 +122,7 @@ fit_landscapemetrics_scale_mods_offset_logreg <- function(zhab) {
     df_scale <- dplyr::filter(configuration_scale_df, scale.group == s)
     glm(
       formula = as.formula(paste0(
-        "bin.crossing ~ ", zhab,
-        " + offset(log(seg.wt + 0.0001))"
-      )),
+        "bin.crossing ~ ", zhab)),
       data = df_scale,
       family = binomial
     )
@@ -140,20 +138,19 @@ fit_landscapemetrics_scale_mods_offset_logreg <- function(zhab) {
 }
 
 
-cohesion_scale_mods_offset <- fit_landscapemetrics_scale_mods_offset_logreg("cohesion")
-cohesion_scale_mods_offset$aic
+cohesion_scale_mods_logreg <- fit_landscapemetrics_scale_mods_logreg("cohesion")
+cohesion_scale_mods_logreg$aic
 
-#Modnames K    AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#1 cohesion100_25 2 116.363      0.000    1.000  0.157 -56.18064 0.1569199
-#7 cohesion300_25 2 116.567      0.203    0.903  0.142 -56.28227 0.2986760
-#4 cohesion200_25 2 116.598      0.235    0.889  0.140 -56.29803 0.4382162
-#8 cohesion300_50 2 116.974      0.610    0.737  0.116 -56.48581 0.5538663
-#5 cohesion200_50 2 117.090      0.727    0.695  0.109 -56.54393 0.6629862
-#2 cohesion100_50 2 117.362      0.999    0.607  0.095 -56.68014 0.7582109
-#9 cohesion300_75 2 117.671      1.308    0.520  0.082 -56.83457 0.8398092
-#6 cohesion200_75 2 117.685      1.322    0.516  0.081 -56.84161 0.9208352
-#3 cohesion100_75 2 117.732      1.368    0.504  0.079 -56.86485 1.0000000
- 
+#      Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#4 cohesion200_25 2 6808.910      0.000    1.000  0.999 -3402.454 0.9988467
+#7 cohesion300_25 2 6822.515     13.605    0.001  0.001 -3409.256 0.9999566
+#1 cohesion100_25 2 6828.996     20.086    0.000  0.000 -3412.497 1.0000000
+#8 cohesion300_50 2 6887.470     78.560    0.000  0.000 -3441.734 1.0000000
+#5 cohesion200_50 2 6894.178     85.268    0.000  0.000 -3445.088 1.0000000
+#2 cohesion100_50 2 6943.653    134.743    0.000  0.000 -3469.825 1.0000000
+#9 cohesion300_75 2 7025.438    216.528    0.000  0.000 -3510.718 1.0000000
+#6 cohesion200_75 2 7037.332    228.422    0.000  0.000 -3516.665 1.0000000
+#3 cohesion100_75 2 7042.413    233.503    0.000  0.000 -3519.205 1.0000000
 
 # all scales have dAICc < 2
 
@@ -167,7 +164,7 @@ cohesion_scale_mods_offset$aic
 #' @returns list with an element for each model and one for the AIC table comparing all models
 #'
 #' @examples
-fit_landscapemetrics_scale_mods_offset_negbin <- function(zhab) {
+fit_landscapemetrics_scale_mods_pois <- function(zhab) {
   # Dynamically set the predictor variable in the formula
   
   ####################################
@@ -175,12 +172,11 @@ fit_landscapemetrics_scale_mods_offset_negbin <- function(zhab) {
   
   zmods <- lapply(scales, function(s) {
     df_scale <- dplyr::filter(configuration_scale_df, scale.group == s)
-    MASS::glm.nb(
+    glm(
       formula = as.formula(paste0(
-        "raw.crossing ~ ", zhab,
-        " + offset(log(seg.wt + 0.0001))"
-      )),
-      data = df_scale
+        "num.lions.crossing ~ ", zhab)),
+      data = df_scale,
+      family = poisson
     )
   })
   
@@ -194,19 +190,20 @@ fit_landscapemetrics_scale_mods_offset_negbin <- function(zhab) {
 }
 
 
-cohesion_scale_mods_offset_nb <- fit_landscapemetrics_scale_mods_offset_negbin("cohesion")
-cohesion_scale_mods_offset_nb$aic
+cohesion_scale_mods_pois <- fit_landscapemetrics_scale_mods_pois("cohesion")
+cohesion_scale_mods_pois$aic
 
-#Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#4 cohesion200_25 3 6614.752      0.000    1.000  0.145 -3304.374 0.1451325
-#6 cohesion200_75 3 6615.054      0.302    0.860  0.125 -3304.525 0.2699053
-#5 cohesion200_50 3 6615.081      0.329    0.848  0.123 -3304.538 0.3930077
-#7 cohesion300_25 3 6615.101      0.349    0.840  0.122 -3304.549 0.5148729
-#3 cohesion100_75 3 6615.442      0.691    0.708  0.103 -3304.719 0.6176291
-#2 cohesion100_50 3 6615.505      0.753    0.686  0.100 -3304.750 0.7172294
-#1 cohesion100_25 3 6615.565      0.813    0.666  0.097 -3304.780 0.8138836
-#8 cohesion300_50 3 6615.602      0.851    0.654  0.095 -3304.799 0.9087406
-#9 cohesion300_75 3 6615.680      0.928    0.629  0.091 -3304.838 1.0000000
+#       Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#4 cohesion200_25 2 9380.744      0.000    1.000  0.995 -4688.371 0.9952917
+#7 cohesion300_25 2 9391.479     10.735    0.005  0.005 -4693.739 0.9999359
+#1 cohesion100_25 2 9400.044     19.300    0.000  0.000 -4698.021 1.0000000
+#8 cohesion300_50 2 9480.109     99.364    0.000  0.000 -4738.053 1.0000000
+#5 cohesion200_50 2 9496.892    116.147    0.000  0.000 -4746.445 1.0000000
+#2 cohesion100_50 2 9537.347    156.603    0.000  0.000 -4766.672 1.0000000
+#3 cohesion100_75 2 9604.004    223.260    0.000  0.000 -4800.001 1.0000000
+#9 cohesion300_75 2 9604.510    223.765    0.000  0.000 -4800.254 1.0000000
+#6 cohesion200_75 2 9610.701    229.956    0.000  0.000 -4803.349 1.0000000
+ 
 
 
 # all scales have dAICc < 2
