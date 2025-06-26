@@ -124,7 +124,8 @@ fit_landscapemetrics_scale_mods_logreg <- function(zhab) {
       formula = as.formula(paste0(
         "bin.crossing ~ ", zhab)),
       data = df_scale,
-      family = binomial
+      family = binomial,
+      weights = num.lion.months
     )
   })
   
@@ -141,16 +142,16 @@ fit_landscapemetrics_scale_mods_logreg <- function(zhab) {
 cohesion_scale_mods_logreg <- fit_landscapemetrics_scale_mods_logreg("cohesion")
 cohesion_scale_mods_logreg$aic
 
-#      Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#4 cohesion200_25 2 6808.910      0.000    1.000  0.999 -3402.454 0.9988467
-#7 cohesion300_25 2 6822.515     13.605    0.001  0.001 -3409.256 0.9999566
-#1 cohesion100_25 2 6828.996     20.086    0.000  0.000 -3412.497 1.0000000
-#8 cohesion300_50 2 6887.470     78.560    0.000  0.000 -3441.734 1.0000000
-#5 cohesion200_50 2 6894.178     85.268    0.000  0.000 -3445.088 1.0000000
-#2 cohesion100_50 2 6943.653    134.743    0.000  0.000 -3469.825 1.0000000
-#9 cohesion300_75 2 7025.438    216.528    0.000  0.000 -3510.718 1.0000000
-#6 cohesion200_75 2 7037.332    228.422    0.000  0.000 -3516.665 1.0000000
-#3 cohesion100_75 2 7042.413    233.503    0.000  0.000 -3519.205 1.0000000
+#      Modnames K     AICc Delta_AICc ModelLik AICcWt        LL Cum.Wt
+#4 cohesion200_25 2 89875.11      0.000        1      1 -44935.56      1
+#7 cohesion300_25 2 90007.22    132.109        0      0 -45001.61      1
+#1 cohesion100_25 2 90007.77    132.662        0      0 -45001.89      1
+#5 cohesion200_50 2 91265.53   1390.414        0      0 -45630.76      1
+#8 cohesion300_50 2 91377.19   1502.074        0      0 -45686.59      1
+#2 cohesion100_50 2 91899.48   2024.362        0      0 -45947.74      1
+#9 cohesion300_75 2 93510.20   3635.091        0      0 -46753.10      1
+#6 cohesion200_75 2 93671.12   3796.012        0      0 -46833.56      1
+#3 cohesion100_75 2 93788.34   3913.227        0      0 -46892.17      1
 
 # all scales have dAICc < 2
 
@@ -176,7 +177,8 @@ fit_landscapemetrics_scale_mods_pois <- function(zhab) {
       formula = as.formula(paste0(
         "num.lions.crossing ~ ", zhab)),
       data = df_scale,
-      family = poisson
+      family = poisson,
+      weights = num.lion.months
     )
   })
   
@@ -193,16 +195,16 @@ fit_landscapemetrics_scale_mods_pois <- function(zhab) {
 cohesion_scale_mods_pois <- fit_landscapemetrics_scale_mods_pois("cohesion")
 cohesion_scale_mods_pois$aic
 
-#       Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#4 cohesion200_25 2 9380.744      0.000    1.000  0.995 -4688.371 0.9952917
-#7 cohesion300_25 2 9391.479     10.735    0.005  0.005 -4693.739 0.9999359
-#1 cohesion100_25 2 9400.044     19.300    0.000  0.000 -4698.021 1.0000000
-#8 cohesion300_50 2 9480.109     99.364    0.000  0.000 -4738.053 1.0000000
-#5 cohesion200_50 2 9496.892    116.147    0.000  0.000 -4746.445 1.0000000
-#2 cohesion100_50 2 9537.347    156.603    0.000  0.000 -4766.672 1.0000000
-#3 cohesion100_75 2 9604.004    223.260    0.000  0.000 -4800.001 1.0000000
-#9 cohesion300_75 2 9604.510    223.765    0.000  0.000 -4800.254 1.0000000
-#6 cohesion200_75 2 9610.701    229.956    0.000  0.000 -4803.349 1.0000000
+#       Modnames K     AICc Delta_AICc ModelLik AICcWt        LL Cum.Wt
+#4 cohesion200_25 2 140266.5      0.000        1      1 -70131.25      1
+#7 cohesion300_25 2 140329.8     63.253        0      0 -70162.88      1
+#1 cohesion100_25 2 140370.4    103.890        0      0 -70183.20      1
+#8 cohesion300_50 2 142054.8   1788.325        0      0 -71025.42      1
+#5 cohesion200_50 2 142196.8   1930.304        0      0 -71096.41      1
+#2 cohesion100_50 2 142686.1   2419.640        0      0 -71341.07      1
+#9 cohesion300_75 2 143882.1   3615.583        0      0 -71939.05      1
+#3 cohesion100_75 2 143912.0   3645.475        0      0 -71953.99      1
+#6 cohesion200_75 2 143994.6   3728.097        0      0 -71995.30      1
  
 
 

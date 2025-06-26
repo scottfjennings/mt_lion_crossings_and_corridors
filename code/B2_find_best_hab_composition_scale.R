@@ -110,7 +110,8 @@ fit_scale_mods_logreg <- function(zhab) {
       formula = as.formula(paste0(
         "bin.crossing ~ ", zhab)),
       data = df_scale,
-      family = binomial
+      family = binomial,
+      weights = num.lion.months
     )
   })
   
@@ -129,37 +130,37 @@ fit_scale_mods_logreg <- function(zhab) {
 dev_scale_mods_logreg <- fit_scale_mods_logreg("mean.dev")
 dev_scale_mods_logreg$aic
 
-#     Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#2   mean.dev60 2 6503.569      0.000    1.000  0.992 -3249.784 0.9923545
-#3   mean.dev90 2 6513.301      9.732    0.008  0.008 -3254.650 0.9999992
-#4  mean.dev120 2 6531.551     27.982    0.000  0.000 -3263.774 1.0000000
-#5  mean.dev150 2 6549.460     45.891    0.000  0.000 -3272.729 1.0000000
-#6  mean.dev180 2 6563.920     60.351    0.000  0.000 -3279.959 1.0000000
-#7  mean.dev210 2 6574.407     70.838    0.000  0.000 -3285.203 1.0000000
-#8  mean.dev240 2 6580.004     76.434    0.000  0.000 -3288.001 1.0000000
-#9  mean.dev270 2 6583.816     80.246    0.000  0.000 -3289.907 1.0000000
-#10 mean.dev300 2 6586.301     82.731    0.000  0.000 -3291.149 1.0000000
-#1   mean.dev30 2 6637.304    133.735    0.000  0.000 -3316.651 1.0000000
+#         Modnames K     AICc Delta_AICc ModelLik AICcWt        LL Cum.Wt
+#2   mean.dev60 2 84282.28      0.000        1      1 -42139.14      1
+#3   mean.dev90 2 84451.85    169.566        0      0 -42223.92      1
+#4  mean.dev120 2 84759.32    477.044        0      0 -42377.66      1
+#5  mean.dev150 2 85069.14    786.861        0      0 -42532.57      1
+#6  mean.dev180 2 85314.18   1031.903        0      0 -42655.09      1
+#7  mean.dev210 2 85482.49   1200.208        0      0 -42739.24      1
+#8  mean.dev240 2 85585.90   1303.618        0      0 -42790.95      1
+#9  mean.dev270 2 85651.78   1369.499        0      0 -42823.89      1
+#10 mean.dev300 2 85697.23   1414.948        0      0 -42846.61      1
+#1   mean.dev30 2 86484.93   2202.655        0      0 -43240.47      1
+ 
  
 
 treshr_scale_mods_logreg <- fit_scale_mods_logreg("mean.tre.shr")
 treshr_scale_mods_logreg$aic
-
-#         Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#10 mean.tre.shr300 2 7042.009      0.000    1.000  0.104 -3519.003 0.1037675
-#9  mean.tre.shr270 2 7042.013      0.004    0.998  0.104 -3519.005 0.2073279
-#8  mean.tre.shr240 2 7042.051      0.042    0.979  0.102 -3519.025 0.3089325
-#7  mean.tre.shr210 2 7042.067      0.058    0.972  0.101 -3519.032 0.4097527
-#2   mean.tre.shr60 2 7042.071      0.062    0.970  0.101 -3519.034 0.5103626
-#6  mean.tre.shr180 2 7042.081      0.072    0.965  0.100 -3519.040 0.6104552
-#3   mean.tre.shr90 2 7042.103      0.094    0.954  0.099 -3519.050 0.7094579
-#5  mean.tre.shr150 2 7042.116      0.107    0.948  0.098 -3519.057 0.8078197
-#4  mean.tre.shr120 2 7042.128      0.119    0.942  0.098 -3519.063 0.9055776
-#1   mean.tre.shr30 2 7042.198      0.189    0.910  0.094 -3519.098 1.0000000
+#          Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#1   mean.tre.shr30 2 93710.12      0.000    1.000  0.820 -46853.06 0.8203813
+#2   mean.tre.shr60 2 93713.24      3.123    0.210  0.172 -46854.62 0.9925420
+#3   mean.tre.shr90 2 93720.71     10.589    0.005  0.004 -46858.35 0.9966593
+#10 mean.tre.shr300 2 93722.33     12.218    0.002  0.002 -46859.17 0.9984830
+#9  mean.tre.shr270 2 93723.30     13.184    0.001  0.001 -46859.65 0.9996081
+#8  mean.tre.shr240 2 93726.93     16.809    0.000  0.000 -46861.46 0.9997917
+#4  mean.tre.shr120 2 93727.96     17.844    0.000  0.000 -46861.98 0.9999012
+#7  mean.tre.shr210 2 93729.28     19.164    0.000  0.000 -46862.64 0.9999577
+#6  mean.tre.shr180 2 93730.80     20.684    0.000  0.000 -46863.40 0.9999842
+#5  mean.tre.shr150 2 93731.83     21.715    0.000  0.000 -46863.91 1.0000000
  
 
 
-#' fit_scale_mixed_mods
+#' fit_scale_mods_pois
 #'
 #' @param zcross either seg.raw.crossing or seg.wt.crossing, the average number of crossings per segment per mt lion per month
 #' @param zhab either mean.dev or mean.tre.shr, the mean development or tree+shrub cover within each buffer distance around each segment
@@ -181,7 +182,8 @@ fit_scale_mods_pois <- function(zhab) {
       formula = as.formula(paste0(
         "num.lions.crossing ~ ", zhab)),
       data = df_scale,
-      family = poisson
+      family = poisson,
+      weights = num.lion.months
     )
   })
   
@@ -199,17 +201,17 @@ fit_scale_mods_pois <- function(zhab) {
 dev_scale_mods_pois <- fit_scale_mods_pois("mean.dev")
 dev_scale_mods_pois$aic
 
-#    Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#2   mean.dev60 2 9101.883      0.000    1.000  0.997 -4548.941 0.9966072
-#3   mean.dev90 2 9113.249     11.366    0.003  0.003 -4554.623 0.9999997
-#4  mean.dev120 2 9131.679     29.795    0.000  0.000 -4563.838 1.0000000
-#5  mean.dev150 2 9151.616     49.732    0.000  0.000 -4573.807 1.0000000
-#6  mean.dev180 2 9167.177     65.294    0.000  0.000 -4581.588 1.0000000
-#7  mean.dev210 2 9177.838     75.954    0.000  0.000 -4586.918 1.0000000
-#8  mean.dev240 2 9182.944     81.060    0.000  0.000 -4589.471 1.0000000
-#9  mean.dev270 2 9187.186     85.303    0.000  0.000 -4591.592 1.0000000
-#10 mean.dev300 2 9189.710     87.827    0.000  0.000 -4592.854 1.0000000
-#1   mean.dev30 2 9257.873    155.990    0.000  0.000 -4626.935 1.0000000
+#     Modnames K     AICc Delta_AICc ModelLik AICcWt        LL Cum.Wt
+#2   mean.dev60 2 135436.8      0.000        1      1 -67716.41      1
+#3   mean.dev90 2 135609.3    172.530        0      0 -67802.67      1
+#4  mean.dev120 2 135889.4    452.621        0      0 -67942.72      1
+#5  mean.dev150 2 136198.7    761.856        0      0 -68097.33      1
+#6  mean.dev180 2 136429.0    992.181        0      0 -68212.50      1
+#7  mean.dev210 2 136576.1   1139.256        0      0 -68286.03      1
+#8  mean.dev240 2 136648.5   1211.664        0      0 -68322.24      1
+#9  mean.dev270 2 136712.8   1275.966        0      0 -68354.39      1
+#10 mean.dev300 2 136750.5   1313.664        0      0 -68373.24      1
+#1   mean.dev30 2 138087.3   2650.463        0      0 -69041.64      1
 
 summary(dev_scale_mods_pois$mean.dev60)
 
@@ -217,16 +219,16 @@ treshr_scale_mods_pois <- fit_scale_mods_pois("mean.tre.shr")
 treshr_scale_mods_pois$aic
 
 #          Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#4  mean.tre.shr120 2 9610.093      0.000    1.000  0.105 -4803.045 0.1045062
-#5  mean.tre.shr150 2 9610.093      0.000    1.000  0.105 -4803.045 0.2090079
-#3   mean.tre.shr90 2 9610.129      0.037    0.982  0.103 -4803.064 0.3116101
-#1   mean.tre.shr30 2 9610.144      0.051    0.975  0.102 -4803.071 0.4134753
-#6  mean.tre.shr180 2 9610.147      0.055    0.973  0.102 -4803.073 0.5151558
-#7  mean.tre.shr210 2 9610.187      0.095    0.954  0.100 -4803.093 0.6148333
-#2   mean.tre.shr60 2 9610.198      0.105    0.949  0.099 -4803.098 0.7139961
-#8  mean.tre.shr240 2 9610.239      0.147    0.929  0.097 -4803.119 0.8111062
-#9  mean.tre.shr270 2 9610.295      0.202    0.904  0.094 -4803.146 0.9055615
-#10 mean.tre.shr300 2 9610.295      0.203    0.904  0.094 -4803.147 1.0000000
+#1   mean.tre.shr30 2 143990.9      0.000    1.000  0.688 -71993.44 0.6879676
+#2   mean.tre.shr60 2 143993.8      2.902    0.234  0.161 -71994.90 0.8491518
+#3   mean.tre.shr90 2 143996.8      5.873    0.053  0.036 -71996.38 0.8856506
+#10 mean.tre.shr300 2 143997.2      6.326    0.042  0.029 -71996.61 0.9147478
+#9  mean.tre.shr270 2 143997.3      6.423    0.040  0.028 -71996.66 0.9424762
+#8  mean.tre.shr240 2 143998.3      7.444    0.024  0.017 -71997.17 0.9591120
+#4  mean.tre.shr120 2 143998.7      7.855    0.020  0.014 -71997.37 0.9726608
+#7  mean.tre.shr210 2 143999.2      8.329    0.016  0.011 -71997.61 0.9833479
+#6  mean.tre.shr180 2 143999.7      8.762    0.013  0.009 -71997.83 0.9919558
+#5  mean.tre.shr150 2 143999.8      8.898    0.012  0.008 -71997.89 1.0000000
 
 # not worrying about spatial autocorrelation at this stage
 # for both compositions, all spatial scales dAICc < 2 when considering crossings for all animals lumped. 
