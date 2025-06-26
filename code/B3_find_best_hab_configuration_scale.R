@@ -84,6 +84,7 @@ all_hr_road_patch_cohesion_treshr_full_months_crossings <- monthly_seg_crossings
 
 nrow(all_hr_road_patch_cohesion_treshr_full_months_crossings) == nrow(all_hr_road_patch_cohesion_treshr_full_months)
 
+####  optional  ####
 # there are some segments with high cohesion values but where the woody cover still doesn't overlap the road
 # this duplicates all_hr_road_patch_cohesion_treshr_full_months, but sets cohesion = 0 for all segments where woody cover doesn't overlap the road
 # then below I can test which one better predicts crossings as part of the scale selection.
@@ -93,7 +94,7 @@ configuration_scale_df <- bind_rows(all_hr_road_patch_cohesion_treshr_full_month
                                                                           mutate(cohesion = ifelse(patch.touches.road == TRUE, cohesion, 0),
                                                                                  which.cohesion = "touchrd"))%>% 
   mutate(scale.group = paste(buff, forest.threshold, which.cohesion, sep = "_"))
-
+####  end optional  ####
 
 configuration_scale_df <- all_hr_road_patch_cohesion_treshr_full_months_crossings %>% 
   mutate(scale.group = paste(buff, forest.threshold, sep = "_"))
