@@ -356,7 +356,8 @@ annual_seg_crossings_naive_roads_only_lions_combined <- num_naive_seg_road_cross
   summarise(annual.seg.raw.crossing = sum(raw.crossing), # not sum(num.naive.seg.crossings)
             annual.seg.wt.crossing = sum(bbmm.segment.weight), # not sum(wt.naive.seg.crossings)
             num.crossing.steps = n(), # including num.crossing.steps and which.steps for checking, these aren't actually needed for the analysis
-            which.steps = paste(crossing.step, collapse = "; ")
+            which.steps = paste(crossing.step, collapse = "; "),
+            num.lions.crossing = n_distinct(animal.id)
   ) %>% 
   ungroup() 
 
@@ -374,9 +375,10 @@ annual_seg_crossings_naive_roads_only_0s_lions_combined <- annual_seg_crossings_
          annual.seg.wt.crossing = replace_na(annual.seg.wt.crossing, 0),
          num.crossing.steps = replace_na(num.crossing.steps, 0),
          num.lion.months = replace_na(num.lion.months, 0),
-         num.lions = replace_na(num.lions, 0)) %>% 
+         num.lions = replace_na(num.lions, 0),
+         num.lions.crossing = replace_na(num.lions.crossing, 0)) %>% 
   arrange(year, seg.label) %>% 
-  select(year, seg.label, which.steps, num.lion.months, num.lions, annual.seg.wt.crossing, annual.seg.raw.crossing, num.crossing.steps, expected.seg)
+  select(year, seg.label, which.steps, num.lion.months, num.lions, num.lions.crossing, annual.seg.wt.crossing, annual.seg.raw.crossing, num.crossing.steps, expected.seg)
 
 
 saveRDS(annual_seg_crossings_naive_roads_only_0s_lions_combined, here("data/analysis_inputs/annual_seg_crossings_naive_roads_only_0s_lions_combined"))
