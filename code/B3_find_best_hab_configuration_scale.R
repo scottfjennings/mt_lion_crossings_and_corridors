@@ -102,7 +102,7 @@ configuration_scale_df <- all_hr_road_patch_cohesion_treshr_full_months_crossing
 saveRDS(configuration_scale_df, here("data/analysis_inputs/configuration_scale_df_lions_combined"))
 
 
-configuration_scale_df <- readRDS(here("data/analysis_inputs/configuration_scale_df"))
+configuration_scale_df <- readRDS(here("data/analysis_inputs/configuration_scale_df_lions_combined"))
 
 ##########################
 # fitting modles with no random effects
@@ -156,8 +156,28 @@ cohesion_scale_mods_logreg$aic
 
 # all scales have dAICc < 2
 
-# going to use 300_25 because it is the largest area (matching composition) and the lowest threshold
+# checking patch.touches.road threshold. patch definition doesn't change with different distance buffers, just woody veg classification threshold, 
+# but fitting all scale.groups so I don't need to modify fit_landscapemetrics_scale_mods_logreg
 
+patchrd_scale_mods_logreg <- fit_landscapemetrics_scale_mods_logreg("patch.touches.road")
+patchrd_scale_mods_logreg$aic
+
+# 25% threshold best supported
+#Warning message:
+#  In aictab.AICglm.lm(zmods, names(zmods)) : 
+#  Check model structure carefully as some models may be redundant
+
+#> patchrd_scale_mods_logreg$aic
+#Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#1 patch.touches.road100_25 2 89184.53      0.000        1  0.333 -44590.27 0.3333333
+#4 patch.touches.road200_25 2 89184.53      0.000        1  0.333 -44590.27 0.6666667
+#7 patch.touches.road300_25 2 89184.53      0.000        1  0.333 -44590.27 1.0000000
+#2 patch.touches.road100_50 2 92282.72   3098.185        0  0.000 -46139.36 1.0000000
+#5 patch.touches.road200_50 2 92282.72   3098.185        0  0.000 -46139.36 1.0000000
+#8 patch.touches.road300_50 2 92282.72   3098.185        0  0.000 -46139.36 1.0000000
+#3 patch.touches.road100_75 2 93745.61   4561.079        0  0.000 -46870.81 1.0000000
+#6 patch.touches.road200_75 2 93745.61   4561.079        0  0.000 -46870.81 1.0000000
+#9 patch.touches.road300_75 2 93745.61   4561.079        0  0.000 -46870.81 1.0000000
 
 #' fit_landscapemetrics_scale_mixed_mods_offset
 #'
