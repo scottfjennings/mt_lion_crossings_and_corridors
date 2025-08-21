@@ -142,6 +142,20 @@ saveRDS(all_hr_road_habitat, here("data/all_hr_road_habitat_95"))
 all_hr_road_habitat <- readRDS(here("data/all_hr_road_habitat_95"))
 
 
+# how much do mean.tre.shr and mean.dev vary between years?
+zz <- all_hr_road_habitat %>% 
+  data.frame() %>% 
+  select(seg.label, buff, year, mean.tre.shr, mean.dev) %>% 
+  pivot_longer(cols = c(mean.tre.shr, mean.dev)) %>% 
+  group_by(seg.label, buff, name) %>% 
+  summarise(min.val = min(value),
+            max.val = max(value),
+            mean.val = mean(value)) %>% 
+  ungroup() %>% 
+  mutate(zdif = max.val - min.val)
+
+
+
 ggplot() +
   geom_sf(data = filter(all_hr_road_habitat, buff == 30), aes(color = mean.tre))
 
