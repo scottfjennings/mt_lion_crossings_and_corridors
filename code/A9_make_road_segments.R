@@ -260,5 +260,72 @@ segments_in_combined_homeranges %>%
 saveRDS(segments_in_combined_homeranges, here("data/segments_in_combined_homeranges"))
 
 
+# calculating distances between all segments, by region ----
 
+seg_midpoints <- readRDS(here("data/seg_midpoints")) %>% 
+  st_as_sf()
+
+
+segments_in_combined_homeranges <- readRDS(here("data/segments_in_combined_homeranges"))
+
+
+seg_regions <- readRDS(here("data/hr_segments_prop_in_developed")) %>% 
+  data.frame() %>% 
+  select(-geometry, -seg.length)   %>% 
+  filter(animal.id %in% analysis_pumas,
+         !animal.id %in% few_crossings_pumas,
+         !animal.id %in% hr_exclude_pumas,
+         !seg.label %in% p31_exclude_segments) %>% 
+  mutate(region = ifelse(animal.id %in% c("P31", "P39"), 1, 2)) %>% 
+  distinct(seg.label, region)
+
+hr_seg_midpoints <- segments_in_combined_homeranges %>% 
+  data.frame() %>% 
+  select(seg.label) %>% 
+  left_join(seg_midpoints) %>% 
+  st_as_sf()
+
+
+seg_distances <- st_distance(hr_seg_midpoints)
+
+seg_distances_df <- data.frame(seg_distances)
+
+# Ensure seg.label is preserved as row and column identifiers
+seg_labels <- hr_seg_midpoints$seg.label
+
+seg_distances_long <- as.data.frame(as.table(as.matrix(seg_distances))) %>%
+  rename(row = Var1, col = Var2, distance = Freq) %>%
+  mutate(
+    row = as.integer(row),
+    col = as.integer(col),
+    row_label = seg_labels[row],
+    col_label = seg_labels[col]
+  ) %>%
+  filter(row < col) %>%
+  select(seg1 = row_label, seg2 = col_label, distance)
+
+
+# Join region info for seg1 and seg2
+seg_distances_with_regions <- seg_distances_long %>%
+  left_join(seg_regions, by = c("seg1" = "seg.label")) %>%
+  rename(region1 = region) %>%
+  left_join(seg_regions, by = c("seg2" = "seg.label")) %>%
+  rename(region2 = region) %>%
+  filter(region1 == region2) %>%
+  rename(region = region1) %>% 
+  select(-region2)
+
+
+# Summarize by region
+seg_distances_with_regions %>%
+  #group_by(region) %>%
+  summarise(
+    n_pairs = n(),
+    mean_distance = mean(distance),
+    median_distance = median(distance),
+    min_distance = min(distance),
+    max_distance = max(distance),
+    sd_distance = sd(distance),
+    .groups = "drop"
+  )
 
