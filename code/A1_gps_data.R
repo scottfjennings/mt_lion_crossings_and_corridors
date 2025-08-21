@@ -157,3 +157,4 @@ puma_steps <- puma_gps_utm %>%
 saveRDS(puma_steps, here("data/puma_steps"))
 
 
+puma_steps <- readRDS(here("data/puma_steps"))
