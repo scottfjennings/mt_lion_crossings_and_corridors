@@ -1,0 +1,263 @@
+---
+title: "data tables"
+output: word_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      error = FALSE)
+```
+
+
+```{r}
+
+
+
+library(tidyverse)
+library(here)
+library(sf)
+library(lubridate)
+library(flextable)
+library(readxl)
+library(spaMM)
+
+options(scipen = 999)
+
+source(here("code/utilities.R"))
+source(here("code/helper_data.R"))
+
+```
+
+
+```{r}
+
+
+puma_sexes <- read_xlsx("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/COLLAR DATE INFO_31Dec2023.xlsx")
+
+names(puma_sexes) <- tolower(names(puma_sexes))
+
+puma_sexes <- puma_sexes %>%
+  rename("animal.id" = `animal id`) %>% 
+  distinct(animal.id, sex)   %>% 
+  filter(animal.id %in% analysis_pumas,
+         !animal.id %in% few_crossings_pumas,
+         !animal.id %in% hr_exclude_pumas)
+
+lion_year_month <- readRDS(here("data/full_lion_year_month_seg")) %>% 
+    filter(animal.id %in% analysis_pumas,
+           !animal.id %in% few_crossings_pumas,
+           !animal.id %in% hr_exclude_pumas,
+           !seg.label %in% p31_exclude_segments) %>% 
+  distinct(animal.id, year, month) %>% 
+  mutate(year.month = ym(paste(year, month))) %>% 
+  group_by(animal.id) %>% 
+  summarise(tot.months = n(),
+            start.tracking = min(year.month),
+            end.tracking = max(year.month)) %>% 
+  ungroup() 
+
+crossings_per_lion <- readRDS(here("data/bbmm_equal_seg_weights")) %>% 
+  data.frame() %>% 
+              select(-geometry) %>% 
+  left_join(readRDS(here("data/hr_segments_prop_in_developed")) %>% 
+              data.frame() %>% 
+              select(-geometry)) %>% 
+    filter(prop.seg.in.dev50 == 0, 
+           animal.id %in% analysis_pumas,
+           !animal.id %in% few_crossings_pumas,
+           !animal.id %in% hr_exclude_pumas,
+           !seg.label %in% p31_exclude_segments) %>% 
+  distinct(animal.id, crossing.step) %>% 
+  group_by(animal.id) %>% 
+  summarise(tot.crossing.steps = n()) %>% 
+  ungroup() 
+
+out_table_2 <- full_join(lion_year_month, crossings_per_lion) %>% 
+  left_join(puma_sexes) %>% 
+  arrange(start.tracking) %>% 
+  mutate(
+    start.tracking = format(as.Date(start.tracking), "%b, %Y"),
+    end.tracking = format(as.Date(end.tracking), "%b, %Y"),
+    mean.monthly.crossings = tot.crossing.steps/tot.months,
+    mean.monthly.crossings = round(mean.monthly.crossings, 1)
+  ) %>% 
+  select(animal.id, sex, start.tracking, end.tracking, tot.months, tot.crossing.steps, mean.monthly.crossings)
+
+```
+  
+  
+  
+  
+helper summary of Table 2
+```{r}
+out_table_2 %>% 
+  reframe(
+    mean.mean.monthly.crossings = mean(mean.monthly.crossings),
+    range.mean.monthly.crossings = paste(range(mean.monthly.crossings), collapse = "–"),
+    tot.tot.crossing.steps = sum(tot.crossing.steps),
+    mean.tot.crossing.steps = mean(tot.crossing.steps),
+    range.tot.crossing.steps = paste(range(tot.crossing.steps), collapse = "–")
+  ) %>% 
+  flextable() %>% 
+  fit_to_width(max_width = 8.5)
+
+```
+  
+  
+  
+  
+  
+Table 2
+```{r}
+
+out_table_2 %>% 
+  flextable() %>% 
+  set_header_labels(animal.id = "Mt lion",
+                    sex = "Sex",
+                    start.tracking = "Start",
+                    end.tracking = "End",
+                    tot.months = "# months\ntracked",
+                    tot.crossing.steps = "# road\ncrossing steps",
+                    mean.monthly.crossings = "mean road\ncrossings/month") %>% 
+  align(j = 2:7, align = "center", part = "all") %>% 
+  autofit()
+  
+  
+
+```
+  
+
+
+Spatial AIC table
+```{r}
+readRDS(here("model_objects/lions_combined/exploratory_mods_logreg_sp_aic")) %>%
+  dplyr::mutate(model_name = str_replace_all(model_name, "_", " + "),
+         model_name = str_replace_all(model_name, "cohesion", "Cohesion"),
+         model_name = str_replace_all(model_name, "woody", "% Woody"),
+         model_name = str_replace_all(model_name, "patchrd", "RoadXwoody"),
+         model_name = str_replace_all(model_name, "dev", "% Dev"),
+         model_name = str_replace_all(model_name, "creek", "# riparian"),
+         model_name = str_replace_all(model_name, "class", "Class")) %>% 
+    mutate(across(c(deltaAIC, AIC_weight), ~round(., 3))) %>% 
+  flextable() %>% 
+  set_header_labels(model_name = "Fixed effect structure",
+                    k_fixed = "# fixed effect\nparameters",
+                    deltaAIC = "\u0394 marginal AIC",         # Unicode delta (Δ)
+                    AIC_weight = "marginal AIC weight") %>% 
+  autofit() %>% 
+  fit_to_width(max_width = 8.5)
+
+```
+
+  
+
+
+
+Non-spatial AIC table  
+This is the full candidate model set, fitted with glm() with no spatial autocorrelation structure.
+```{r}
+readRDS(here("model_objects/lions_combined/exploratory_mods_logreg"))$aic %>%
+  select(-ModelLik) %>% 
+  mutate(Modnames = str_replace_all(Modnames, "_", " + "),
+         Modnames = str_replace_all(Modnames, "cohesion", "Cohesion"),
+         Modnames = str_replace_all(Modnames, "woody", "% Woody"),
+         Modnames = str_replace_all(Modnames, "patchrd", "RoadXwoody"),
+         Modnames = str_replace_all(Modnames, "dev", "% Dev"),
+         Modnames = str_replace_all(Modnames, "creek", "# riparian"),
+         Modnames = str_replace_all(Modnames, "class", "Class"))  %>% 
+    mutate(across(c(Delta_AICc, AICcWt), ~round(., 3))) %>% 
+  flextable() %>% 
+  set_header_labels(model_name = "Fixed effect structure",
+                    k_fixed = "# fixed effect\nparameters",
+                    Delta_AICc = "\u0394 marginal AIC",         # Unicode delta (Δ)
+                    AIC_weight = "marginal AIC weight") %>% 
+  autofit() %>% 
+  fit_to_width(max_width = 8.5)
+
+```
+
+
+spatial AIC table, 1km spatial aggregation  
+This is the full candidate model set, fitted with spAMM::fitme() with spatial autocorrelation structure, and with coordinates aggregated to a 1km grid.
+```{r}
+readRDS(here("model_objects/lions_combined/logreg_sp_aic1000_top5")) %>% 
+  mutate(model_name = str_replace_all(model_name, "_", " + "),
+         model_name = str_replace_all(model_name, "cohesion", "Cohesion"),
+         model_name = str_replace_all(model_name, "woody", "% Woody cover"),
+         model_name = str_replace_all(model_name, "patchrd", "Road intersects woody cover"),
+         model_name = str_replace_all(model_name, "dev", "% Development cover"),
+         model_name = str_replace_all(model_name, "creek", "# riparian crossings"),
+         model_name = str_replace_all(model_name, "class", "Road Class")) %>% 
+  flextable() %>% 
+  autofit() %>% 
+  fit_to_width(max_width = 8.5)
+
+```
+  
+
+Table 3. Sensitivity of fixed effect coefficient estimates to different levels of aggregation of coordinates for estimating spatial random effects for 12 mountain lions GPS tracked in Sonoma and Napa counties, California, 2016-2023.  
+```{r}
+coarsener_beta_table_summary <- readRDS(here("model_objects/lions_combined/coarsener_beta_table_summary"))
+
+distinct(coarsener_beta_table_summary, variable, min.est, max.est, mean.Estimate, sd.est, cv.est) %>% 
+  arrange(cv.est) %>% 
+  mutate(across(c(mean.Estimate, contains(".est")), ~round(., 3))) %>% 
+  mutate(out.est = paste(mean.Estimate, " (", min.est, ", ", max.est, ")", sep = "")) %>% 
+  select(variable, out.est, sd.est, cv.est) %>% 
+  flextable() %>% 
+  set_header_labels(variable = "Variable",
+                    out.est = "Mean (min, max)",
+                    sd.est = "St. Dev.",
+                    cv.est = "Coef. of\nVariation") %>% 
+  autofit() %>% 
+  align(j = 2:4, align = "center", part = "all") %>% 
+  fit_to_width(max_width = 8.5)
+
+```
+
+  
+Summary of crossing and non-crossing steps for all lions.    
+```{r}
+
+naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr"))
+
+
+puma_steps <- readRDS(here("data/puma_steps")) %>% 
+  #  filter(between(as.numeric(step.dur), 2700, 43200)) %>%  # 45 min and 12 hr
+  filter(between(as.numeric(step.dur), 6600, 7800)) # 110 min and 130 min 
+# limiting data to just steps 120 +- 10 min to just consider movement behavior near the time of the road crossing
+
+step_summary <- naive_crossings %>% 
+  data.frame() %>% 
+  select(step.id, road.label) %>% 
+  full_join(puma_steps %>% 
+              select(step.id, animal.id, datetime.local)) %>% 
+  distinct() %>% 
+    filter(animal.id %in% analysis_pumas,
+           !animal.id %in% few_crossings_pumas,
+           !animal.id %in% hr_exclude_pumas)
+
+step_summary %>% 
+  mutate(is.crossing.step = !is.na(road.label),
+         step.hour = hour(datetime.local)) %>% 
+  group_by(animal.id, is.crossing.step) %>% 
+  summarise(num.steps = n(),
+            mean.step.hour = mean(step.hour)) %>% 
+  flextable() %>% 
+  fit_to_width(max_width = 8.5)
+  
+
+
+```
+
+
+
+```{r}
+
+logreg_sp_best_model_diagnostics <- readRDS(here("model_objects/lions_combined/logreg_sp_best_model_diagnostics"))
+```
+
+
