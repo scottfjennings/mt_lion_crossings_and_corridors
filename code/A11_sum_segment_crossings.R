@@ -204,6 +204,28 @@ steps_month_years <- readRDS(here("data/puma_steps")) %>%
   distinct(step.id, year, month) %>% 
   rename(crossing.step = step.id)
 
+# build up df with a record for each segment in each lion's home range for each month that there were crossings by that lion
+# this will be a many-to-many join because each lion X year X month will have many segments, and each segment may be in multiple lion home ranges
+# segments_in_homeranges has only the 12 main analysis lions
+seg_hr <- readRDS(here("data/segments_in_homeranges")) %>% 
+  mutate(animal.id = puma) %>% 
+  data.frame() %>% 
+  distinct(animal.id, seg.label)
+
+
+# df with each month-year each lion was collared
+puma_month_year <- steps_month_years %>% 
+  animal.id_from_crossing.step() %>% 
+  distinct(animal.id, month, year)
+
+# joining
+full_seg_puma_month_year <- puma_month_year %>% 
+  full_join(seg_hr) %>% 
+  filter(animal.id %in% analysis_pumas, 
+         !animal.id %in% few_crossings_pumas) %>% 
+  mutate(expected.seg = 1)
+
+
 # and now add month and year to the summed naive segment and road crossings
 # this still has all the few_crossings_pumas individuals
 num_naive_seg_road_crossings_num_roads_months_years <- num_naive_seg_road_crossings_num_roads %>%
@@ -212,6 +234,8 @@ num_naive_seg_road_crossings_num_roads_months_years <- num_naive_seg_road_crossi
 
 # the join above shouldn't add any rows beyond what num_naive_seg_road_crossings_num_roads already had
 nrow(num_naive_seg_road_crossings_num_roads_months_years) == nrow(num_naive_seg_road_crossings_num_roads)
+
+saveRDS(num_naive_seg_road_crossings_num_roads_months_years, here("data/num_naive_seg_road_crossings_num_roads_months_years"))
 
 
 # in num_naive_seg_road_crossings_num_roads_months_years:
@@ -237,6 +261,9 @@ nrow(num_naive_seg_road_crossings_num_roads_months_years) == nrow(num_naive_seg_
 # but for the current analysis plan I'm counting monthly crossings for the entire naively crossed road
 # could also 
 
+num_naive_seg_road_crossings_num_roads_months_years <- readRDS(here("data/num_naive_seg_road_crossings_num_roads_months_years"))
+
+
 
 # first by segment-lion-month level ----
 # now calculate monthly crossings of just the naively crossed roads. this is the filtering level I'm using in the analysis
@@ -253,24 +280,6 @@ monthly_seg_crossings_naive_roads_only <- num_naive_seg_road_crossings_num_roads
 
 
 # next need to add all the non-crossed segments for each lion each month
-# build up df with a record for each segment in each lion's home range for each month that there were crossings by that lion
-# this will be a many-to-many join because each lion X year X month will have many segments, and each segment may be in multiple lion home ranges
-# segments_in_homeranges has only the 12 main analysis lions
-seg_hr <- readRDS(here("data/segments_in_homeranges")) %>% 
-  mutate(animal.id = puma) %>% 
-  data.frame() %>% 
-  distinct(animal.id, seg.label)
-
-
-puma_month_year <- steps_month_years %>% 
-  animal.id_from_crossing.step() %>% 
-  distinct(animal.id, month, year)
-
-full_seg_puma_month_year <- puma_month_year %>% 
-  full_join(seg_hr) %>% 
-  filter(animal.id %in% analysis_pumas, 
-         !animal.id %in% few_crossings_pumas) %>% 
-  mutate(expected.seg = 1)
 
 
 # seg_crossing_sums_naive_roads_only has some segments for lions outside that lion's 95% home range because bbmm_equal_seg_weights is created from segments inside the combined home range polygon
@@ -375,10 +384,11 @@ annual_seg_crossings_naive_roads_only_0s_lions_combined <- annual_seg_crossings_
          annual.seg.wt.crossing = replace_na(annual.seg.wt.crossing, 0),
          num.crossing.steps = replace_na(num.crossing.steps, 0),
          num.lion.months = replace_na(num.lion.months, 0),
-         num.lions = replace_na(num.lions, 0),
-         num.lions.crossing = replace_na(num.lions.crossing, 0)) %>% 
+         num.lions = replace_na(num.lions, 0), # this is the number of lions collared that year with this segment in their homerange
+         num.lions.crossing = replace_na(num.lions.crossing, 0)) %>% # this is the number of lions that actually crossed this segment this year
   arrange(year, seg.label) %>% 
   select(year, seg.label, which.steps, num.lion.months, num.lions, num.lions.crossing, annual.seg.wt.crossing, annual.seg.raw.crossing, num.crossing.steps, expected.seg)
+
 
 
 saveRDS(annual_seg_crossings_naive_roads_only_0s_lions_combined, here("data/analysis_inputs/annual_seg_crossings_naive_roads_only_0s_lions_combined"))
