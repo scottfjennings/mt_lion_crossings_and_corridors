@@ -69,7 +69,7 @@ fit_save_aLoCoH <- function(zlion, row.cap = 6000) {
     
     # small enough, run directly
     lion_hr <- lion_df %>%
-      a_LoCoH_HR(iso_levels = c(1))
+      a_LoCoH_HR(iso_levels = c(0.99))
     
   } else {
     
@@ -84,7 +84,7 @@ fit_save_aLoCoH <- function(zlion, row.cap = 6000) {
     
     
     # run LoCoH on each subset with map()
-    lion_chunks_hr <- map(lion_splits, ~ a_LoCoH_HR(.x, iso_levels = c(1)))
+    lion_chunks_hr <- map(lion_splits, ~ a_LoCoH_HR(.x, iso_levels = c(0.99)))
     
     
     # combine results
@@ -149,14 +149,49 @@ fit_save_aLoCoH <- function(zlion, row.cap = 6000) {
 all_lions <- distinct(analysis_table, ID) %>% pull(ID)
 safe_all_lions_hr <- map(all_lions, safely(fit_save_aLoCoH))
 
-# create shapefile ----
+# create shapefile, check home ranges, etc. ----
+
+library(ggmap)
+source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/google_api_key.R")
+
 
 aLoCoH_hrs <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs"))
 
-ggplot() +
-  geom_sf(data = aLoCoH_hrs %>% filter(ID %in% c("P19", "P14", "P36") | ID %in% exclude_pumas), color = "gray", fill = NA, linewidth = 1) +
-  geom_sf(data = aLoCoH_hrs %>% filter(!ID %in% c("P19", "P14", "P36"), !ID %in% exclude_pumas), aes(color = ID), fill = NA, linewidth = 1) +
+hr_fix_plotter <- function(zlion) {
+out_plot <- ggplot() +
+  geom_sf(data = aLoCoH_hrs %>% filter(ID == zlion), color = "black", fill = NA, linewidth = 1) +
+  geom_sf(data = analysis_table %>% filter(ID == zlion), fill = NA, linewidth = 1) +
   theme_bw()
+return(out_plot)
+}
+
+
+
+
+hr_fix_plotter_map <- function(zlion, zzoom = 12) {
+  # get bounding box of the lion’s home range
+  bbox <- st_bbox(aLoCoH_hrs %>% filter(ID == zlion))
+  bbox <- st_bbox(aLoCoH_hrs %>% filter(ID == zlion))
+  
+  # fetch satellite map from Google
+  base_map <- get_map(
+    location = c(lon = mean(c(bbox$xmin, bbox$xmax)),
+                 lat = mean(c(bbox$ymin, bbox$ymax))),
+    zoom = zzoom,         # adjust zoom level as needed
+    maptype = "satellite"
+  )
+  
+  ggmap(base_map) +
+    geom_sf(data = aLoCoH_hrs %>% filter(ID == zlion),
+            color = "red", fill = NA, linewidth = 1,
+            inherit.aes = FALSE) +
+    geom_sf(data = analysis_table %>% filter(ID == zlion),
+            color = "red",
+            fill = NA, linewidth = 1,
+            inherit.aes = FALSE)
+}
+
+
 
 
 ggplot() +
