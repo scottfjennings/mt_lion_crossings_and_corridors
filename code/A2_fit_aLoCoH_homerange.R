@@ -51,6 +51,7 @@ n_cores = detectCores()- 2
 
 # load a_LoCoH_HR function ----
 source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/R_examples_resources/pseudo_packages/Dougherty aLoCoH/a_LoCoH_HR_SJ.R")
+source("C:/Users/scott.jennings.EGRET/OneDrive - Audubon Canyon Ranch/R_examples_resources/pseudo_packages/Dougherty aLoCoH/a_LoCoH_HR_SJ.R")
 # p12_test <- a_LoCoH_HR(data = data)
 
 # now a wrapper to run and save for each lion ---- 
