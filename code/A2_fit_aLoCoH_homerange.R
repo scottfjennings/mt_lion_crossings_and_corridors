@@ -150,6 +150,30 @@ fit_save_aLoCoH <- function(zlion, row.cap = 6000) {
 all_lions <- distinct(analysis_table, ID) %>% pull(ID)
 safe_all_lions_hr <- map(all_lions, safely(fit_save_aLoCoH))
 
+
+# p1 and P4 still have interior holes
+
+p1_99_manual_hole_filled <- aLoCoH_hrs %>% 
+  filter(ID == "P1", iso_level == 0.99) %>% 
+  mutate(geometry = geometry[[1]] %>%
+           st_geometry() %>% 
+           unlist(recursive = FALSE) %>% 
+           map(., ~st_polygon(.x[1])) %>% 
+           st_sfc(crs = st_crs(aLoCoH_hrs)) %>% 
+           st_union()) %>% 
+  st_transform(crs = 26910)
+  
+p4_99_manual_hole_filled <- aLoCoH_hrs %>% 
+  filter(ID == "P4", iso_level == 0.99) %>% 
+  mutate(geometry = geometry[[1]] %>%
+           st_geometry() %>% 
+           unlist(recursive = FALSE) %>% 
+           map(., ~st_polygon(.x[1])) %>% 
+           st_sfc(crs = st_crs(aLoCoH_hrs)) %>% 
+           st_union()) %>% 
+  st_transform(crs = 26910)
+
+
 # create shapefile, check home ranges, etc. ----
 
 library(ggmap)
@@ -159,6 +183,12 @@ source("C:/Users/scott.jennings.EGRET/OneDrive - Audubon Canyon Ranch/Projects/g
 
 aLoCoH_hrs <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs"))
 
+aLoCoH_hrs_clean <- aLoCoH_hrs %>% 
+  st_transform(crs = 26910) %>%
+  filter(!(ID == "P1" & iso_level == 0.99)) %>% 
+  filter(!(ID == "P4" & iso_level == 0.99)) %>% 
+  distinct() %>% 
+  bind_rows(p1_99_manual_hole_filled, p4_99_manual_hole_filled)
 
 
 hr_fix_plotter <- function(zlion) {
@@ -191,7 +221,9 @@ hr_fix_plotter_map <- function(zlion, zzoom = 12) {
     geom_sf(data = analysis_table %>% filter(ID == zlion),
             color = "red",
             fill = NA, linewidth = 1,
-            inherit.aes = FALSE)
+            inherit.aes = FALSE) +
+    labs(title = paste(zlion, "a-LoCoH isopleths"),
+         color = "Isopleth level")
 }
 
 
