@@ -13,12 +13,13 @@ keep_road_classes = c("Collector"
 
 exclude_labels <- c("Hwy 101 N", "Hwy 12 E")
 
-exclude_pumas <- c("P10"  # only collared 2 weeks
-                   , "P15" # only collared 1 week
-                   , "P17" # very little data so likely will break logistic regression models
-                   , "P20" # only collared 1 week
+exclude_pumas <- c("P10"  # only collared 2 weeks, 196 fixes
+                   , "P15" # only collared 1 week, 30 fixes
+                   , "P17" # only 36 fixes. very little data so likely will break logistic regression models
+                   , "P20" # only collared 1 week, 183 fixes
                    , "P27" # daughter of P16, both died at the same time while P27 still dependent
                    , "P32" # moved to Hopland, Q thinks data after move are good, but that's outside our study area
+                   , "P34" # only collared for 41 days
 )
 
 
