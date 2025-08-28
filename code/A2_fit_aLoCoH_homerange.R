@@ -154,13 +154,16 @@ safe_all_lions_hr <- map(all_lions, safely(fit_save_aLoCoH))
 
 library(ggmap)
 source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/google_api_key.R")
+source("C:/Users/scott.jennings.EGRET/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/google_api_key.R")
 
 
 aLoCoH_hrs <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs"))
 
+
+
 hr_fix_plotter <- function(zlion) {
 out_plot <- ggplot() +
-  geom_sf(data = aLoCoH_hrs %>% filter(ID == zlion), color = "black", fill = NA, linewidth = 1) +
+  geom_sf(data = aLoCoH_hrs %>% filter(ID == zlion), aes(color = as.factor(iso_level)), fill = NA, linewidth = 1) +
   geom_sf(data = analysis_table %>% filter(ID == zlion), fill = NA, linewidth = 1) +
   theme_bw()
 return(out_plot)
@@ -183,8 +186,7 @@ hr_fix_plotter_map <- function(zlion, zzoom = 12) {
   )
   
   ggmap(base_map) +
-    geom_sf(data = aLoCoH_hrs %>% filter(ID == zlion),
-            color = "red", fill = NA, linewidth = 1,
+    geom_sf(data = aLoCoH_hrs %>% filter(ID == zlion), aes(color = as.factor(iso_level)), fill = NA, linewidth = 1,
             inherit.aes = FALSE) +
     geom_sf(data = analysis_table %>% filter(ID == zlion),
             color = "red",
