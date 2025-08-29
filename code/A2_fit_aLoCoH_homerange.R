@@ -70,7 +70,7 @@ fit_save_aLoCoH <- function(zlion, row.cap = 6000) {
     
     # small enough, run directly
     lion_hr <- lion_df %>%
-      a_LoCoH_HR(iso_levels = c(0.99))
+      a_LoCoH_HR(iso_levels = c(0.99, 1))
     
   } else {
     
@@ -85,7 +85,7 @@ fit_save_aLoCoH <- function(zlion, row.cap = 6000) {
     
     
     # run LoCoH on each subset with map()
-    lion_chunks_hr <- map(lion_splits, ~ a_LoCoH_HR(.x, iso_levels = c(0.99)))
+    lion_chunks_hr <- map(lion_splits, ~ a_LoCoH_HR(.x, iso_levels = c(0.99, 1)))
     
     
     # combine results
