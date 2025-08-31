@@ -1,14 +1,15 @@
 
 
-
+library(tidyverse)
 library(terra)
 library(here)
 library(sf)
 
 
 
-hab_masker <- st_read(here("data/shapefiles/combined_puma_homeranges_95.shp")) %>% 
-  st_buffer(300)
+hab_masker <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs_99_combined_sonoma_napa")) %>% 
+  st_buffer(300) %>% 
+  st_transform(crs = 26910)
 
 
 
@@ -61,4 +62,4 @@ create_tre_shr_raster(2017)
 
 system.time(
 map(seq(2016, 2023), create_tre_shr_raster)
-) # 162
+) # 372
