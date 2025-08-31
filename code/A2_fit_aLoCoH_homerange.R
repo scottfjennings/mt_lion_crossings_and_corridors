@@ -151,6 +151,18 @@ all_lions <- distinct(analysis_table, ID) %>% pull(ID)
 safe_all_lions_hr <- map(all_lions, safely(fit_save_aLoCoH))
 
 
+
+# create shapefile, check home ranges, etc. ----
+
+library(ggmap)
+source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/google_api_key.R")
+source("C:/Users/scott.jennings.EGRET/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/google_api_key.R")
+
+
+aLoCoH_hrs <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs"))
+
+
+
 # p1 and P4 still have interior holes
 
 p1_99_manual_hole_filled <- aLoCoH_hrs %>% 
@@ -162,7 +174,7 @@ p1_99_manual_hole_filled <- aLoCoH_hrs %>%
            st_sfc(crs = st_crs(aLoCoH_hrs)) %>% 
            st_union()) %>% 
   st_transform(crs = 26910)
-  
+
 p4_99_manual_hole_filled <- aLoCoH_hrs %>% 
   filter(ID == "P4", iso_level == 0.99) %>% 
   mutate(geometry = geometry[[1]] %>%
@@ -174,26 +186,23 @@ p4_99_manual_hole_filled <- aLoCoH_hrs %>%
   st_transform(crs = 26910)
 
 
-# create shapefile, check home ranges, etc. ----
-
-library(ggmap)
-source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/google_api_key.R")
-source("C:/Users/scott.jennings.EGRET/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/google_api_key.R")
-
-
-aLoCoH_hrs <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs"))
 
 aLoCoH_hrs_clean <- aLoCoH_hrs %>% 
   st_transform(crs = 26910) %>%
   filter(!(ID == "P1" & iso_level == 0.99)) %>% 
   filter(!(ID == "P4" & iso_level == 0.99)) %>% 
   distinct() %>% 
-  bind_rows(p1_99_manual_hole_filled, p4_99_manual_hole_filled)
+  bind_rows(p1_99_manual_hole_filled, p4_99_manual_hole_filled) %>% 
+  st_transform(crs = 4326)
+
+
+# 
+saveRDS(aLoCoH_hrs_clean, here("model_objects/a_loCoH home ranges/aLoCoH_hrs_clean"))
 
 
 hr_fix_plotter <- function(zlion) {
 out_plot <- ggplot() +
-  geom_sf(data = aLoCoH_hrs %>% filter(ID == zlion), aes(color = as.factor(iso_level)), fill = NA, linewidth = 1) +
+  geom_sf(data = aLoCoH_hrs_clean %>% filter(ID == zlion), aes(color = as.factor(iso_level)), fill = NA, linewidth = 1) +
   geom_sf(data = analysis_table %>% filter(ID == zlion), fill = NA, linewidth = 1) +
   theme_bw()
 return(out_plot)
@@ -202,10 +211,9 @@ return(out_plot)
 
 
 
-hr_fix_plotter_map <- function(zlion, zzoom = 12) {
+hr_fix_plotter_map <- function(which.hrs, zlion, zzoom = 12) {
   # get bounding box of the lion’s home range
-  bbox <- st_bbox(aLoCoH_hrs %>% filter(ID == zlion))
-  bbox <- st_bbox(aLoCoH_hrs %>% filter(ID == zlion))
+  bbox <- st_bbox(which.hrs %>% filter(ID == zlion))
   
   # fetch satellite map from Google
   base_map <- get_map(
@@ -216,7 +224,7 @@ hr_fix_plotter_map <- function(zlion, zzoom = 12) {
   )
   
   ggmap(base_map) +
-    geom_sf(data = aLoCoH_hrs %>% filter(ID == zlion), aes(color = as.factor(iso_level)), fill = NA, linewidth = 1,
+    geom_sf(data = which.hrs %>% filter(ID == zlion), aes(color = as.factor(iso_level)), fill = NA, linewidth = 1,
             inherit.aes = FALSE) +
     geom_sf(data = analysis_table %>% filter(ID == zlion),
             color = "red",
@@ -233,5 +241,91 @@ ggplot() +
   geom_sf(data = aLoCoH_hrs, aes(color = ifelse((ID %in% c("P19", "P14", "P36") | !ID %in% exclude_pumas), "gray", ID)))
 
 
-st_write(aLoCoH_hrs, here("data/shapefiles/aLoCoH_hrs.shp"), append = FALSE)
+st_write(aLoCoH_hrs_clean, here("data/shapefiles/aLoCoH_hrs_clean.shp"), append = FALSE)
+
+
+# combine HRs and filter to just Sonoma and Napa for one road clipping shape -----
+
+aLoCoH_hrs_clean <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs_clean"))
+
+
+
+library(tigris)
+
+# make tigris return sf objects
+options(tigris_class = "sf")
+
+# load all California counties
+sonoma_napa <- counties(state = "CA", year = 2023) %>%
+  dplyr::filter(NAME %in% c("Sonoma", "Napa"))
+
+sonoma_napa_union <- summarise(sonoma_napa) %>% 
+  st_transform(crs = 4326)
+
+# check result
+plot(st_geometry(sonoma_napa))
+
+
+aLoCoH_hrs_99 <- aLoCoH_hrs_clean %>% 
+  st_transform(crs = 26910) %>% 
+  filter(iso_level == 0.99) 
+
+# add column to indicate which hr are totally inside sonoma and napa counties
+aLoCoH_hrs_99 <- aLoCoH_hrs_99 %>% 
+  bind_cols(aLoCoH_hrs_99 %>% 
+              st_within(sonoma_napa_union %>% 
+                          st_transform(crs = 26910), sparse = FALSE) %>% 
+              data.frame() %>% 
+              rename(all.in.sonoma.napa = 1))
+
+
+# individual animal home ranges clipped to sonoma and napa counties
+aLoCoH_hrs_99_sonoma_napa <- aLoCoH_hrs_99 %>% 
+  st_intersection(sonoma_napa_union %>% 
+                    st_transform(crs = 26910)) %>% 
+  st_transform(crs = 4326)
+
+saveRDS(aLoCoH_hrs_99_sonoma_napa, here("model_objects/a_loCoH home ranges/aLoCoH_hrs_99_sonoma_napa"))
+
+# as of Aug 29, 2025 P34 is the only lion excluded based on home range quirkiness.
+# p14, P19, and P36 have home ranges partially outside sonoma and napa, but for now I'm just clipping their HR to these counties rather than completely excluding these lions
+aLoCoH_hrs_99_combined <- aLoCoH_hrs_99 %>%
+  filter(!ID %in% c("P34")) %>% 
+#  filter(all.in.sonoma.napa == TRUE) %>% 
+  summarise() %>% 
+  st_transform(crs = 4326)
+
+
+aLoCoH_hrs_99_combined_sonoma_napa <- aLoCoH_hrs_99_combined %>% 
+  st_intersection(sonoma_napa_union) 
+
+saveRDS(aLoCoH_hrs_99_combined_sonoma_napa, here("model_objects/a_LoCoH home ranges/aLoCoH_hrs_99_combined_sonoma_napa"))
+
+
+# visualizing a-LoCoH home ranges ----
+
+# get bounding box of the lion’s home range
+bbox <- st_bbox(aLoCoH_hrs_99_combined)
+
+# fetch satellite map from Google
+base_map <- get_map(
+  location = c(lon = mean(c(bbox$xmin, bbox$xmax)),
+               lat = mean(c(bbox$ymin, bbox$ymax))),
+  zoom = 9,         # adjust zoom level as needed
+  maptype = "satellite"
+)
+
+ggmap(base_map) +
+  geom_sf(data = analysis_table, color = "red", linewidth = 1, alpha = 0.2, inherit.aes = FALSE) +
+  geom_sf(data = aLoCoH_hrs_99_combined, color = "blue", fill = NA, linewidth = 1, inherit.aes = FALSE) +
+  geom_sf(data = aLoCoH_hrs_99_combined_sonoma_napa, color = "green", fill = NA, linewidth = 1, inherit.aes = FALSE) +
+  geom_sf(data = sonoma_napa_union, inherit.aes = FALSE, fill = NA, color = "orange", linewidth = 1) +
+  coord_sf(crs = st_crs(aLoCoH_hrs_99_combined), datum = NA)  # force consistent CRS
+
+
+
+ggmap(base_map) +
+  geom_sf(data = aLoCoH_hrs_99_sonoma_napa, aes(color = ID), fill = NA, linewidth = 1, inherit.aes = FALSE)
+
+
 
