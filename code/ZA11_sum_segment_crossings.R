@@ -261,7 +261,7 @@ saveRDS(num_naive_seg_road_crossings_num_roads_months_years, here("data/num_naiv
 # but for the current analysis plan I'm counting monthly crossings for the entire naively crossed road
 # could also 
 
-num_naive_seg_road_crossings_num_roads_months_years <- readRDS(here("data/num_naive_seg_road_crossings_num_roads_months_years"))
+num_naive_seg_road_crossings_num_roads_months_years <- readRDS(here("data/temp_data_archive20250826/num_naive_seg_road_crossings_num_roads_months_years"))
 
 
 
