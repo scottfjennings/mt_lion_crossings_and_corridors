@@ -23,9 +23,6 @@ exclude_pumas <- c("P10"  # only collared 2 weeks, 196 fixes
 )
 
 
-aLoCoH_exclude_lions <- c("P19" # dispersing; many points outside Sonoma/Napa
-                          )
-
 hr_exclude_pumas <- c("P36", #funky locations, in the ocean
                       "P14", # many points outside Sonoma/Napa
                       "P37", # not totally range resident and 100% HR covers much of sonoma 
