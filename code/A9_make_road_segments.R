@@ -98,7 +98,7 @@ ggplot() +
 
 
 
-# 2b. split the merged road objects anywhere there is a road intersection ----
+# NO RUN 2b. split the merged road objects anywhere there is a road intersection ----
 # get the points for each intersection along each road
 napa_sonoma_rds_intersections <- st_collection_extract(st_intersection(final_cleaned_road_layer), "POINT")
 
@@ -136,8 +136,9 @@ find_segment_midpoint <- function(zseg) {
 }
 
 
-
+system.time(
 seg_midpoints <- map_df(napa_sonoma_rds_equal_segs_df$seg.label, find_segment_midpoint)
+) # 74
 
 st_write(seg_midpoints, here("data/shapefiles/segment_midpoints.shp"), append = FALSE)
 
@@ -209,48 +210,63 @@ napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %
   st_as_sf() 
 
 # individual lion homeranges ----
-puma_homeranges_95 <- st_read(here("data/shapefiles/puma_homeranges_95.shp")) %>% 
-  filter(puma %in% analysis_pumas, !puma %in% few_crossings_pumas)
-
+puma_homeranges <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs_99_sonoma_napa")) %>% 
+  filter(iso_level == 0.99) %>% 
+  rename(animal.id = ID) %>% 
+  filter(!animal.id %in% c("P30", "P34"))
 # Ensure coordinate reference systems match
-napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(puma_homeranges_95))
+napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(puma_homeranges))
 
 # Spatial join: assign each road segment to overlapping home range
-segments_in_homeranges <- st_join(napa_sonoma_rds_equal_segs, puma_homeranges_95, join = st_within)
+segments_in_homeranges <- st_intersection(napa_sonoma_rds_equal_segs, puma_homeranges) %>% 
+  select(animal.id, seg.label, seg.length, all.in.sonoma.napa, geometry)
 
 # Optional: filter out segments not within any homerange
-segments_in_homeranges <- segments_in_homeranges %>% filter(!is.na(puma))
+segments_in_homeranges <- segments_in_homeranges %>% filter(!is.na(animal.id))
 
 # checking
 segments_in_homeranges %>% 
   data.frame() %>% 
   select(-geometry) %>% 
   group_by(seg.label) %>% 
-  summarise(pumas = paste(puma, collapse = "; "),
+  summarise(pumas = paste(animal.id, collapse = "; "),
             npuma = n()) %>%
   view()
 
-saveRDS(segments_in_homeranges, here("data/segments_in_homeranges"))
+saveRDS(segments_in_homeranges, here("data/segments_in_puma_homeranges"))
 
 # all lions combined homerange polygon ----
-combined_puma_homeranges_95 <- st_read(here("data/shapefiles/combined_puma_homeranges_95.shp"))
+#combined_puma_homeranges <- readRDS(here("model_objects/a_LoCoH home ranges/aLoCoH_hrs_99_combined_sonoma_napa"))
+
+combined_puma_homeranges <- puma_homeranges %>% 
+  summarise()
+  
+
 
 # Ensure coordinate reference systems match
-napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(combined_puma_homeranges_95))
+napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(combined_puma_homeranges))
 
 # Spatial join: assign each road segment to overlapping home range
 # st_intersects to retain segments partially within the homeranges
 # st_within retains segments that are totally within homeranges
 # for the combined homerange polygon it doesn't make a difference
-# segments_in_combined_homeranges <- st_join(napa_sonoma_rds_equal_segs, combined_puma_homeranges_95, join = st_intersects)
-segments_in_combined_homeranges <- st_join(napa_sonoma_rds_equal_segs, combined_puma_homeranges_95, join = st_within)
+segments_in_combined_homeranges <- st_intersection(napa_sonoma_rds_equal_segs, combined_puma_homeranges) %>% 
+  select(, seg.label, seg.length, geometry)
 
+ggplot() +
+  geom_sf(data = combined_puma_homeranges) +
+  geom_sf(data = puma_homeranges, aes(color = animal.id), fill = NA) +
+  geom_sf(data = segments_in_combined_homeranges)
 
-
-# Optional: filter out segments not within any homerange
-segments_in_combined_homeranges <- segments_in_combined_homeranges %>% filter(!is.na(FID))
 
 # checking
+# there should be a perfect match between segments in the individual lion and lions combined home ranges
+# if not doulde check which lions are in the combined
+segments_in_combined_homeranges %>% data.frame() %>% distinct(seg.label) %>% mutate(in.combined = TRUE) %>% 
+  full_join(segments_in_homeranges %>% data.frame() %>% distinct(seg.label) %>% mutate(in.individual = TRUE)) %>% 
+  view()
+
+
 segments_in_combined_homeranges %>% 
   data.frame() %>% 
   select(-geometry) %>% 

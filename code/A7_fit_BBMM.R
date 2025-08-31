@@ -73,4 +73,21 @@ prob_check <- map_df(crossing_steps, prob_checker)
 # nope, save output
 saveRDS(all_clusters_bbmm, here("model_objects/all_clusters_bbmm_1step"))
 
+# added Aug 2025, any lions with a-LoCoH home ranges not have naive crossings
+# no, have naive crossings for everyone
+
+all_clusters_bbmm <- readRDS(here("model_objects/all_clusters_bbmm_1step"))
+
+names(all_clusters_bbmm) %>% 
+  data.frame() %>% 
+  rename(crossing.step = 1 )%>%  
+  animal.id_from_crossing.step() %>% 
+  distinct(animal.id) %>% 
+  mutate(bbmm.clusters = TRUE) %>% 
+  full_join(readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs_clean")) %>%
+              filter(iso_level == 0.99) %>% 
+              distinct(ID) %>% 
+              rename(animal.id = ID) %>% 
+              mutate(hr = TRUE))
+
 

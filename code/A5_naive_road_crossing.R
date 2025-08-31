@@ -30,7 +30,7 @@ final_cleaned_road_layer <- readRDS(here("data/final_cleaned_road_layer")) %>%
 
 # functions ----
 
-# find which road segments were crossed by lion steps ----
+# find which roads were crossed by lion steps ----
 
 
 # zstep = puma_steps$step.id[1]
@@ -80,4 +80,50 @@ saveRDS(naive_crossings, here("data/naive_crossings_napa_sonoma_2hr"))
 
 naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr"))
 
+
+# added Aug 2025, any lions with a-LoCoH home ranges not have naive crossings
+# no, have naive crossings for everyone
+naive_crossings %>% 
+  data.frame() %>% 
+  mutate(crossing.step = step.id) %>% 
+  animal.id_from_crossing.step() %>% 
+  distinct(animal.id) %>% 
+  mutate(naive.xings = TRUE) %>% 
+  full_join(readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs_clean")) %>%
+              filter(iso_level == 0.99) %>% 
+              distinct(ID) %>% 
+              rename(animal.id = ID) %>% 
+              mutate(hr = TRUE))
+
+
+# check number of steps and crossing steps per lion
+naive_crossings %>% 
+  data.frame() %>% 
+  mutate(crossing.step = step.id) %>% 
+  animal.id_from_crossing.step() %>% 
+  count(animal.id) %>% 
+  mutate(exclude = animal.id %in% exclude_pumas) %>% 
+  arrange(n)
+
+
+steps_crossings <- naive_crossings %>% 
+  data.frame() %>% 
+  mutate(crossing.step = step.id) %>% 
+  animal.id_from_crossing.step() %>% 
+  count(animal.id) %>% 
+  rename(num.naive.crossings = n) %>% 
+  full_join(puma_steps %>% count(animal.id) %>% rename(num.steps = n))
+
+analysis_notes <- read.csv(here("data/manual_edit_data/analysis_notes.csv"))
+
+analysis_notes <- analysis_notes %>% 
+  select(-num.steps, -num.naive.crossings) %>% 
+  full_join(steps_crossings) %>% 
+  mutate(crossing.ratio = num.naive.crossings/num.steps)
+
+analysis_notes %>% 
+  select(animal.id, num.naive.crossings, num.steps, crossing.ratio) %>% 
+  arrange(num.naive.crossings)
+
+write.csv(analysis_notes, here("data/manual_edit_data/analysis_notes.csv"), row.names = FALSE)
 

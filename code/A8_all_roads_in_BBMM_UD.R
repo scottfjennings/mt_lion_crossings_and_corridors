@@ -211,3 +211,114 @@ all_bbmm_roads <- map(all_bbmm_roads_safe, "result")[sapply(map(all_bbmm_roads_s
 saveRDS(all_bbmm_roads, here("model_objects/all_bbmm_roads_1step"))
 all_bbmm_roads <- readRDS(here("model_objects/all_bbmm_roads_1step"))
 
+  
+
+
+# new Aug 2025 checking if all lions with aLoCoH hr have bbmm roads ----
+# all do but P30. P30 only had 3 crossings and not had step durations within bounds for BBMM calculations
+names(all_bbmm_roads) %>% 
+  data.frame() %>% 
+  rename(crossing.step = 1 )%>%  
+  animal.id_from_crossing.step() %>% 
+  distinct(animal.id) %>% 
+  mutate(bbmm.clusters = TRUE) %>% 
+  full_join(readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs_clean")) %>%
+              filter(iso_level == 0.99) %>% 
+              distinct(ID) %>% 
+              rename(animal.id = ID) %>% 
+              mutate(hr = TRUE))
+
+# new Aug 2025 adding naive crossed status here ----
+# new analysis plan per conversation with Jon B is to use the whole length of road inside the BBMM as the crossed segment, 
+# and not to have multiple equal-length-segments IDed as partially crossed for each step
+
+system.time(
+  all_bbmm_roads_df <- all_bbmm_roads %>% 
+    bind_rows(.id = "crossing.step")
+) # 10
+
+# add column indicating if this BBMM rd is the naively crossed road (may be >1 naive rd)
+# need left_join here because naive_crossings has steps that I couldn't calculate BBMM for
+all_bbmm_roads_df_naive <- all_bbmm_roads_df %>% 
+  left_join(naive_crossings %>% 
+              data.frame() %>% 
+              select(crossing.step = step.id, road.label) %>% 
+              mutate(naive.rd = TRUE)) %>% 
+  mutate(naive.rd = replace_na(naive.rd, FALSE))
+
+# add column with number of naively crossed roads per crossing step
+all_bbmm_roads_df_naive <- all_bbmm_roads_df_naive %>% 
+  group_by(crossing.step) %>% 
+  mutate(num.naive.rds = sum(naive.rd)) %>% 
+  ungroup()
+
+
+# count how many times each naive road was crossed by each crossing ----
+
+# get naive segment crossings. ----
+
+
+puma_steps <- readRDS(here("data/puma_steps"))
+
+# until now only have whole road naive crossings, need to redo the spatial intersection to find the naive segment crossings
+# this allows calculating how many times each segment (not entire roads) was naively crossed 
+
+# segments crossed an even number of times likely were not true crossings; the cat instead likely e.g. went around the outside of a curve.
+
+# first need to redo the intersection of the step and the roads like in A5_naive_road_crossing.R, but now using the equal length segments instead of final_clean_road_layer
+#' get_naive_segment_crossings
+#' 
+#' check which road segments in each BBMM UD were actually crossed by the straight line of the step. Use the BBMM segments (not larger area) for quicker processing time
+#' 
+#
+#' @param zcrossing.step 
+#'
+#' @returns list with an element for each crossing step, and for each crossing step returns the geometry for the actual naive crossing location (POINT) for each segment. This contrasts with utilities::get_all_bbmm_roads which returns the geometry for the crossed road (LINESTRING)
+#'
+#' @examples
+get_naive_crossing_points <- function(zcrossing.step) {
+  
+  # get the crossing step GPS points. use the original puma_steps for this for easiest filtering of the start and end GPS point for each step
+  crossing_step_wide <- filter(puma_steps, step.id == zcrossing.step)
+  
+  crossing_step <- bind_rows(crossing_step_wide %>% 
+                               dplyr::select(step.id, datetime.local, easting, northing),
+                             crossing_step_wide %>% 
+                               select(step.id, datetime.local = datetime.local.end, easting = easting.end, northing = northing.end)) %>% 
+    data.frame() %>% 
+    st_as_sf(coords = c("easting", "northing"), crs = 26910)
+  
+  # make into a line for intersection
+  crossing_step_line <- crossing_step %>%
+    st_as_sf(coords = c("easting", "northing"), crs = 26910) %>%
+    group_by(step.id) %>%
+    dplyr::summarize(do_union=FALSE) %>% 
+    st_cast("LINESTRING") %>% 
+    rename(crossing.step = step.id)
+  
+  # get all naively crossed roads that are in this step's BBMM UD
+  bbmm_ud_naive_roads <-   all_bbmm_roads_df_naive %>% 
+    filter(crossing.step == zcrossing.step, naive.rd == TRUE) %>% 
+    select(road.label, geometry)
+  
+  naive_crossing_points <- st_intersection(crossing_step_line, bbmm_ud_naive_roads) %>% 
+    st_cast("POINT")
+  
+  return(naive_crossing_points)
+}
+
+system.time(
+all_naive_crossing_points <- map_df(crossing_steps, get_naive_crossing_points)
+) #122
+
+num_naive_crossings <- all_naive_crossing_points %>% 
+  data.frame() %>% 
+  group_by(crossing.step) %>% 
+  count(road.label) %>% 
+  rename(crossings.per.naive.rd = n)
+
+all_bbmm_roads_df_naive <- all_bbmm_roads_df_naive %>% 
+  full_join(num_naive_crossings)
+
+saveRDS(all_bbmm_roads_df_naive, here("data/all_bbmm_roads_df_naive"))
+

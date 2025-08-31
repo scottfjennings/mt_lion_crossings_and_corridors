@@ -63,6 +63,7 @@ system.time(
 # 2705 3/5/25
 
 saveRDS(neighbor_steps_all, here("data/neighbor_steps_all"))
+neighbor_steps_all <- readRDS(here("data/neighbor_steps_all"))
 
 # want all steps in a cluster to be close to 2 hours, currently using +- 10 min
 
@@ -76,7 +77,7 @@ ok_step_dur <- neighbor_steps_all %>%
 ok_step_dur %>% 
   filter(all.step.dur.ok == TRUE) %>% 
   distinct(crossing.step) %>% nrow()
-# 4900 crossing clusters 1/30/25
+# 4900 of 6278 crossing clusters have good step durations for calculating BBMM UD 1/30/25
 
 crossing_clusters <- ok_step_dur %>% 
   filter(all.step.dur.ok == TRUE) %>% 
