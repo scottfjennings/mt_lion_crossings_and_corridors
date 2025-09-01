@@ -22,13 +22,22 @@ lions_years <- naive_crossings <- readRDS(here("data/puma_steps")) %>%
   distinct(animal.id, year)
 
 
-segments_in_homeranges <- readRDS(here("data/segments_in_puma_homeranges"))
+segments_in_homeranges <- readRDS(here("data/segments_in_puma_homeranges")) %>% 
+  select(-all.in.sonoma.napa) %>% 
+  mutate(hr.seg.length = st_length(.),
+         across(contains("seg.length"), ~round(., 0)))
 
-# where lion home ranges overlap, only need one record per year for each segment, so remove animal.id and run distinct()
+# where lion home ranges overlap, only need one record per year for each segment, 
+# so add in lions_years to ensure have all required years,
+# then remove animal.id and run distinct()
 available_segments_years <- segments_in_homeranges %>% 
   left_join(lions_years, relationship = "many-to-many") %>% 
-  select(-animal.id) %>% 
-  distinct()%>% 
+  select(-animal.id) %>%
+  group_by(seg.label, year) %>% 
+  # some segments for different lions have slightly different geometries so the distinct below doesn't fully work. this summarise fixes that
+  summarise(geometry = st_union(geometry)) %>% 
+  ungroup() %>% 
+  distinct() %>% 
   st_transform(crs = 26910) %>% 
   st_as_sf() %>% 
   mutate(used.available = 0)
@@ -79,6 +88,11 @@ ggplot() +
 
 
 saveRDS(all_analysis_segments, here("data/all_analysis_segments"))
+
+
+readRDS(here("data/all_analysis_segments")) %>% 
+  st_write(here("data/shapefiles/all_analysis_segments.shp"), append = FALSE)
+
 
 
 # finally bu
