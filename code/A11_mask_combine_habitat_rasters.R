@@ -11,7 +11,7 @@ hab_masker <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs_99_comb
   st_buffer(300) %>% 
   st_transform(crs = 26910)
 
-
+# tree and shrub combined ----
 
 create_tre_shr_raster <- function(zyear) {
   
@@ -63,3 +63,47 @@ create_tre_shr_raster(2017)
 system.time(
 map(seq(2016, 2023), create_tre_shr_raster)
 ) # 372
+
+
+# development layer ----
+
+
+create_dev_raster <- function(zyear) {
+  
+  # Define input and output paths
+  input_path <- paste0(
+    "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/",
+    "Harvey_north bay habitat/RSF_Layers_", zyear, "_2024-03-19.TIF"
+  )
+  output_dir <- here::here("data/processed_habitat_rasters")
+  dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+  
+  # Load habitat raster
+  zhab <- terra::rast(input_path)
+  
+  # Extract layers
+  dev_raw <- zhab[["Development"]]
+  
+  # Project + mask
+  dev_raw_processed <- dev_raw %>%
+      terra::crop(hab_masker) %>%
+      terra::project("EPSG:26910") %>%
+      terra::mask(hab_masker)
+  
+  # Save individual layers
+  dev_path <- file.path(output_dir, paste0("dev_", zyear, ".tif"))
+  
+  terra::writeRaster(dev_raw_processed, dev_path, overwrite = TRUE)
+  
+  message("Saved Development raster for ", zyear)
+}
+
+
+create_dev_raster(2017)
+
+system.time(
+  map(seq(2016, 2023), create_dev_raster)
+) # 134
+
+
+

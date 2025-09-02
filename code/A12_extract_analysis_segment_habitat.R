@@ -67,7 +67,7 @@ get_analysis_segment_mean_habitat <- function(zyear, zveg) {
   }
 
 
-
+# run for tree + shrub ----
 
 system.time(
   all_analysis_segments_mean_tre_shr  <- map2_df(seq(2016, 2023), "tre_shr", get_analysis_segment_mean_habitat)
@@ -141,6 +141,29 @@ all_analysis_segments_mean_tre_shr_full %>%
   view()
 
 saveRDS(all_analysis_segments_mean_tre_shr_full, here("data/all_analysis_segments_mean_tre_shr_full"))
+
+
+
+
+
+# run for development ----
+# not running for now 9/2/25
+system.time(
+  all_analysis_segments_mean_tre_shr  <- map2_df(seq(2016, 2023), "dev", get_analysis_segment_mean_habitat)
+) # 1166 Aug 2025
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
