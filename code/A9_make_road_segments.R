@@ -28,7 +28,7 @@ final_cleaned_road_layer <- final_cleaned_road_layer %>%
 readRDS(here("model_objects/all_bbmm_roads_1step")) %>% 
   bind_rows(.id = "crossing.step") %>% 
   summary()
-# mean crossed.seg.length = 888
+# mean crossed.seg.length = 530 as of 9/2/25
 #
 # 2 splitting roads into segments
 # slightly different method for splitting into equal segment vs splitting by road intersections
@@ -38,7 +38,7 @@ readRDS(here("model_objects/all_bbmm_roads_1step")) %>%
 
 make_equal_length_road_pts <- function(zroad) {     
   road_in <- filter(final_cleaned_road_layer, road.label == zroad)
-  zdist = seq(0, as.numeric(road_in$road.length), by = 888)
+  zdist = seq(0, as.numeric(road_in$road.length), by = 530)
   road_pts <- road_in %>%
     st_as_sfc() %>%   
     st_line_interpolate(dist = zdist) 
@@ -213,7 +213,7 @@ napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %
 puma_homeranges <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs_99_sonoma_napa")) %>% 
   filter(iso_level == 0.99) %>% 
   rename(animal.id = ID) %>% 
-  filter(!animal.id %in% c("P30", "P34"))
+  filter(!animal.id %in% c("P21", "P30", "P34"))
 # Ensure coordinate reference systems match
 napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(puma_homeranges))
 
@@ -276,7 +276,7 @@ segments_in_combined_homeranges %>%
 saveRDS(segments_in_combined_homeranges, here("data/segments_in_combined_homeranges"))
 
 
-# calculating distances between all segments, by region ----
+# 9/2/25 NO RUN. calculating distances between all segments, by region ----
 
 seg_midpoints <- readRDS(here("data/seg_midpoints")) %>% 
   st_as_sf()
