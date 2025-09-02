@@ -24,8 +24,7 @@ lions_years <- naive_crossings <- readRDS(here("data/puma_steps")) %>%
 
 segments_in_homeranges <- readRDS(here("data/segments_in_puma_homeranges")) %>% 
   select(-all.in.sonoma.napa) %>% 
-  mutate(hr.seg.length = st_length(.),
-         across(contains("seg.length"), ~round(., 0)))
+  filter(!animal.id %in% c("P21", "P30", "P34"))
 
 # where lion home ranges overlap, only need one record per year for each segment, 
 # so add in lions_years to ensure have all required years,
@@ -57,6 +56,7 @@ any(st_is_empty(available_segments_years))
 # need to create a label ID equivalent to seg.label for equal length segments
 # need to also add year for each crossing step
 all_bbmm_roads_df_naive <- readRDS(here("data/all_bbmm_roads_df_naive")) %>% 
+  filter(!animal.id %in% c("P21", "P30", "P34")) %>%  
   mutate(seg.label = paste(road.label, crossing.step, sep = "_")) %>% 
   st_transform(crs = 26910) %>% 
   mutate(used.available = 1)
@@ -71,7 +71,7 @@ steps_years <- naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma
 
 used_segments_years <- all_bbmm_roads_df_naive  %>% 
   select(crossing.step, seg.label, seg.length = crossed.seg.length, used.available, geometry) %>% 
-  left_join(steps_years) # need left_join because naive_crossings has steps that BBMM couldn't be calculated for 
+  left_join(steps_years) # need left_join because naive_crossings has steps that BBMM couldn't be calculated for
   
 
 all_analysis_segments <- bind_rows(used_segments_years, available_segments_years)
@@ -81,6 +81,14 @@ all_analysis_segments <- bind_rows(used_segments_years, available_segments_years
 # pretty sure I fixed these by usign left join above to exclude segments with no BBMM calculated, but still double checking
 any(st_is_empty(all_analysis_segments))
 
+# should only be 1 seg.label per year
+all_analysis_segments %>% 
+  data.frame() %>% 
+  count(seg.label, year) %>% 
+  filter(n > 1)
+
+
+
 # and a plot to see if anything looks funky
 ggplot() +
   geom_sf(data = all_analysis_segments %>% filter(year == 2022), aes(color = as.factor(used.available))) +
@@ -89,8 +97,8 @@ ggplot() +
 
 saveRDS(all_analysis_segments, here("data/all_analysis_segments"))
 
-
-readRDS(here("data/all_analysis_segments")) %>% 
+all_analysis_segments %>% 
+#readRDS(here("data/all_analysis_segments")) %>% 
   st_write(here("data/shapefiles/all_analysis_segments.shp"), append = FALSE)
 
 
