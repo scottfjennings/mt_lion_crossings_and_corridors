@@ -9,44 +9,30 @@ library(tidyverse)
 
 source(here("code/helper_data.R"))
 
-# roads 
-# this is just the segments in the combined homerange polygon for the 12 analysis lions
-segments_in_combined_homeranges <- readRDS(here("data/segments_in_combined_homeranges"))
-
-# smaller set of roads for testing the function
-# segments_in_combined_homeranges <- segments_in_combined_homeranges[1:100,]
 
 
-study_years <- readRDS(here("data/crossing_clusters_gps_1step")) %>% 
-  mutate(year = year(datetime.local)#, 
-         #puma = str_extract(crossing.step, "^[^_]+(?=_)"),
-         #puma = ifelse(puma == "P5*", "P5", puma)
-  ) %>% 
-  ungroup() %>% 
-  distinct(year) %>% 
-  pull(year) # convert df column to string
 
-# redoing this to NOT be by puma
-# May 2025 realized doing this by puma means extracting habitat multiple time for each segment where home ranges overlap.
-# quicker to just do each segment once
+# read data ----
+# this is all the used and available road segments for all lions
+all_analysis_segments <- readRDS(here("data/all_analysis_segments"))
 
-# reading in data takes some time so doing it once outside the function
+# all_analysis_segments <- all_analysis_segments[1:100,]
 
-combined_puma_homeranges_95 <- st_read(here("data/shapefiles/combined_puma_homeranges_95.shp"))
-# this is to filter the habitat raster to speed processing time when extracting values around each road segment. need the 300 m buffer to get all the habitat for segments that are right on the homerange edge.
-hab_masker <- st_buffer(combined_puma_homeranges_95, 300)
-
-# precomputed segment buffers
-
-buffers_sf <- readRDS(here("data/precomputed_road_buffers.rds"))
-
+study_years = seq(2016, 2023)
 
 # functions to calculate various landscape metrics for each segment across various scales ----
 
 # I tested a number of landscape metrics available through the landscapemetrics package
 # eventually settled on cohesion as the one that best represented what Quinton thinks is important about landscape configuration: "mini-corridors" crossing open country that allow lions to move through road areas
-# the cohesion function is first, functions below line 140 are retained for posterity
+# the cohesion function is first, functions below are retained for posterity
 
+
+# double checking, should all be 1
+all_analysis_segments %>% 
+  data.frame() %>% 
+  count(seg.label, year) %>% 
+  view()
+  
 
 
 # calculate patch cohesion ----
@@ -61,11 +47,14 @@ buffers_sf <- readRDS(here("data/precomputed_road_buffers.rds"))
 #' woody plant threshold: this is the % cover threshold for classifying a raster cell as woody or not. cohesion is calculated based on 1 vs 0 classification of each cell, not on the original % cover of the veg type of interest. currently calculating at 25, 50, 75%
 #' 
 #'
-#' @examples
+#' @examples Hwy 12_Sonoma_1_P13_29892_25455
 get_hr_road_patch_cohesion_treshr <- function(zyear, layer_type = "tre_shr") {
   
   thresholds <- c(25, 50, 75)
   buffers <- c(100, 200, 300)
+  
+  all_analysis_segments_yr <- all_analysis_segments %>% 
+    filter(year == zyear, seg.label == "Hwy 12_Sonoma_1_P13_29892_25455")
   
   # Load preprocessed raster
   layer_path <- here("data/processed_habitat_rasters", paste0(layer_type, "_", zyear, ".tif"))
@@ -87,8 +76,8 @@ get_hr_road_patch_cohesion_treshr <- function(zyear, layer_type = "tre_shr") {
     
     forest_binary <- binary_forest_list[[as.character(threshold)]]
     
-    road_buffer_sf <- buffers_sf[[as.character(buff_dist)]]
-    if (is.null(road_buffer_sf)) stop("Buffer ", buff_dist, " not found in buffers_sf")
+    road_buffer_sf <- st_buffer(all_analysis_segments_yr, buff_dist)
+    
     
     buffer_metrics <- purrr::map_dfr(1:nrow(road_buffer_sf), function(j) {
       one_buf <- road_buffer_sf[j, ]
@@ -99,16 +88,12 @@ get_hr_road_patch_cohesion_treshr <- function(zyear, layer_type = "tre_shr") {
       bin_mask <- terra::mask(bin_crop, one_vect)
       
       
-      # Calculate area proportion of woody vegetation
-      total_cells <- terra::global(!is.na(bin_mask), "sum", na.rm = TRUE)[[1]]
-      woody_cells <- terra::global(bin_mask == 1, "sum", na.rm = TRUE)[[1]]
-      woody_prop <- if (!is.na(total_cells) && total_cells > 0) woody_cells / total_cells else NA_real_
-      
+  
       # Convert the masked raster (binary woody cover within buffer) to patches (polygons)
       # Default to FALSE
       patch_touches_road <- FALSE
       
-      road_seg <- segments_in_combined_homeranges %>% filter(seg.label == one_buf$seg.label)
+      road_seg <- all_analysis_segments_yr %>% filter(seg.label == one_buf$seg.label)
   
       patch_check <- try({
         patch_rast <- landscapemetrics::get_patches(bin_mask, class = 1, directions = 8)[[1]]$class_1
@@ -145,8 +130,7 @@ get_hr_road_patch_cohesion_treshr <- function(zyear, layer_type = "tre_shr") {
           buff = buff_dist,
           forest.threshold = threshold,
           layer = toupper(layer_type),
-          patch.touches.road = patch_touches_road,
-          woody.prop = woody_prop
+          patch.touches.road = patch_touches_road
         )
     })
     
@@ -164,56 +148,81 @@ get_hr_road_patch_cohesion_treshr <- function(zyear, layer_type = "tre_shr") {
 
 
 system.time(
-  all_hr_road_patch_cohesion_treshr <- get_hr_road_patch_cohesion_treshr(2017, layer_type = "tre_shr")
-) # ~1000
+  all_hr_road_patch_cohesion_treshr <- get_hr_road_patch_cohesion_treshr(2016, layer_type = "tre_shr")
+) # 349
+
 
 
 system.time(
   all_hr_road_patch_cohesion_treshr  <- map_df(seq(2016, 2023), get_hr_road_patch_cohesion_treshr)
-) # 7969
+) # 24434.59 
+
+
+# should be up to 9 records per seg.label per year
+# but some may be missing if certain classification threshold weren't met at certain buffer distances
+all_hr_road_patch_cohesion_treshr %>%
+  count(seg.label, year) %>%
+  filter(n < 9) %>% 
+  nrow()
+
+nrow(all_hr_road_patch_cohesion_treshr)
+
+all_hr_road_patch_cohesion_treshr %>%
+  count(seg.label, year) %>% 
+  view()
+
 
 
 # now add back in segments that didn't make it through that process (I think these are mostly segments that had no TRE+SHR cells at a given buffer distance and forest threshold)
 # Define buffer and threshold values
 buffers <- c(100, 200, 300)
 thresholds <- c(25, 50, 75)
-years <- seq(2016, 2023)
 
 # Create all combinations of buffer × threshold
 buff_thresh_combos <- crossing(
   buff = buffers,
-  forest.threshold = thresholds,
-  year = years
+  forest.threshold = thresholds
 )
 
 # Cross with your real seg.label-animal.id pairs
-lion_segments <- readRDS(here("data/segments_in_homeranges")) %>% 
+all_segments_buff_thresh <- all_analysis_segments %>%
   data.frame() %>% 
-  select(animal.id = puma, seg.label)   %>% 
-  filter(animal.id %in% analysis_pumas,
-         !animal.id %in% few_crossings_pumas,
-         !animal.id %in% hr_exclude_pumas,
-         !seg.label %in% p31_exclude_segments) 
+  select(seg.label, year, used.available, crossing.step) %>% 
+  crossing(buff_thresh_combos) %>% 
+  mutate(layer = "TRE_SHR")
 
-full_combos <- lion_segments%>%
-  crossing(buff_thresh_combos)
+all_segments_buff_thresh %>%
+  count(seg.label, year) %>%
+  filter(n < 9) %>% 
+  nrow()
 
-# checking number of rows overall and per segment-year-lion
-# there are 72 buff-forest.threshold-year combinations
-nrow(full_combos)/72 == nrow(lion_segments) # should be TRUE
-count(full_combos, animal.id, seg.label, year) %>% filter(n != 9) %>% nrow() # should be 0
 
 #all_hr_road_patch_cohesion_treshr <- readRDS(here("data/all_hr_road_patch_cohesion_treshr"))
-all_hr_road_patch_cohesion_treshr_full <- left_join(full_combos, all_hr_road_patch_cohesion_treshr)
+all_analysis_segments_cohesion_treshr <- all_hr_road_patch_cohesion_treshr %>% 
+  select(-class) %>% 
+  right_join(all_segments_buff_thresh)
 
 # checking again
-nrow(all_hr_road_patch_cohesion_treshr_full)/72 == nrow(lion_segments) # should be TRUE
-count(all_hr_road_patch_cohesion_treshr_full, animal.id, seg.label, year) %>% filter(n != 9) %>% nrow() # should be 0
+all_analysis_segments_cohesion_treshr %>%
+  count(seg.label, year) %>%
+  filter(n < 9) %>% 
+  nrow()
 
 
-saveRDS(all_hr_road_patch_cohesion_treshr_full, here("data/all_hr_road_patch_cohesion_treshr_full"))
+saveRDS(all_analysis_segments_cohesion_treshr, here("data/all_analysis_segments_cohesion_treshr"))
+all_analysis_segments_cohesion_treshr <- readRDS(here("data/all_analysis_segments_cohesion_treshr"))
+
+# filling NAs
+all_analysis_segments_cohesion_treshr_full <- all_analysis_segments_cohesion_treshr %>% 
+  mutate(cohesion = replace_na(cohesion, 0),
+         np = replace_na(np, 0),
+         patch.touches.road = replace_na(patch.touches.road, FALSE))
+
+saveRDS(all_analysis_segments_cohesion_treshr_full, here("data/all_analysis_segments_cohesion_treshr_full"))
+
 
 ########################################
+# other metrics
 # calculate landscape contagion ----
 
 get_hr_road_landscape_contag_treshr <- function(zyear) {
