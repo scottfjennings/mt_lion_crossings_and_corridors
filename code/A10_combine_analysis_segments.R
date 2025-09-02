@@ -103,22 +103,3 @@ all_analysis_segments %>%
 
 
 
-# finally bu
-# Set buffer distances
-buffers <- c(100, 200, seq(30, 300, by = 30))
-
-# Vectorize road segments (assuming segments_in_combined_homeranges is an sf object)
-road_vect <- terra::vect(all_analysis_segments)
-
-# Create a named list of buffers
-road_segment_buffers <- purrr::map(buffers, function(b) {
-  buf <- sf::st_buffer(all_analysis_segments, dist = b)
-  buf_sf <- sf::st_as_sf(buf)
-  buf_sf$seg.label <- all_analysis_segments$seg.label
-  buf_sf$buffer <- b
-  buf_sf
-})
-names(road_segment_buffers) <- as.character(buffers)
-
-# Optionally save to disk
-saveRDS(road_segment_buffers, here("data/precomputed_road_buffers.rds"))
