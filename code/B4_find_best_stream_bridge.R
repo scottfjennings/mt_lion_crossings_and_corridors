@@ -33,6 +33,10 @@ napa_sonoma_rds_equal_segs_df <- readRDS(here("data/napa_sonoma_rds_equal_segs")
 stream_segment_Intersect <- st_read(here("data/shapefiles/stream_segment_Intersect.shp"))
 
 
+# 9/2/25 trying to do the stream road intersection here in R
+
+
+
 stream_segment_Intersect_df <- stream_segment_Intersect %>% 
   data.frame() %>% 
   select(name, orig_class, source_dat, clicklabel, leglabel, seg_lbl, -geometry) %>% 
