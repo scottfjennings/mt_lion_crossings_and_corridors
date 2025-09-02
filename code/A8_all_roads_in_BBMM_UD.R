@@ -318,7 +318,8 @@ num_naive_crossings <- all_naive_crossing_points %>%
   rename(crossings.per.naive.rd = n)
 
 all_bbmm_roads_df_naive <- all_bbmm_roads_df_naive %>% 
-  full_join(num_naive_crossings)
+  full_join(num_naive_crossings) %>% 
+  animal.id_from_crossing.step()
 
 saveRDS(all_bbmm_roads_df_naive, here("data/all_bbmm_roads_df_naive"))
 
