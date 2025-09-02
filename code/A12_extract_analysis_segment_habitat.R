@@ -12,9 +12,8 @@ options(scipen = 999)
 source(here("code/helper_data.R"))
 
 
-
-# roads 
-# this is just the segments in the combined homerange polygon for the 12 analysis lions
+# read data ----
+# this is all the used and available road segments for all lions
 all_analysis_segments <- readRDS(here("data/all_analysis_segments"))
 
 
@@ -30,7 +29,7 @@ all_analysis_segments <- readRDS(here("data/all_analysis_segments"))
 #' @return data frame with the zveg value for each cell within each buffer polygon for each segment
 #'
 #' @examples
-get_analysis_segment_habitat <- function(zyear, zveg) {
+get_analysis_segment_mean_habitat <- function(zyear, zveg) {
   
   seg_df <- all_analysis_segments %>% 
     filter(year == zyear)
@@ -58,25 +57,94 @@ get_analysis_segment_habitat <- function(zyear, zveg) {
     full_join(hr_road_buffers_df) %>% 
     mutate(veg.layer = zveg)
   
-  return(seg_veg)
+  mean_veg <- seg_veg %>% 
+    filter(!is.na(sum)) %>% 
+    group_by(seg.label, year, buff) %>% 
+    summarise(mean.veg = mean(sum, na.rm = TRUE)) %>% 
+    ungroup()
+  
+  return(mean_veg)
   }
 
 
 
 
 system.time(
-  all_analysis_segment_habitat  <- map2_df(seq(2016, 2023), "tre_shr", get_analysis_segment_habitat)
-) # 606!!! 2.5% the time of doing it by individual (and for a larger area)
-# 1003 Aug 2025
+  all_analysis_segments_mean_tre_shr  <- map2_df(seq(2016, 2023), "tre_shr", get_analysis_segment_mean_habitat)
+) # 1166 Aug 2025
+
+all_analysis_segments_mean_tre_shr %>% 
+  count(seg.label, year) %>% 
+  filter(n < 10) %>% 
+  view()
+
+
+all_analysis_segments_mean_tre_shr %>% 
+  count(seg.label, year, buff) %>% 
+  pivot_wider(id_cols = c(seg.label, year), names_from = buff, values_from = n) %>% 
+  view()
+
+
+saveRDS(all_analysis_segments_mean_tre_shr, here("data/all_analysis_segments_mean_tre_shr"))
+all_analysis_segments_mean_tre_shr <- readRDS(here("data/all_analysis_segments_mean_tre_shr"))
+
+all_analysis_segments_mean_tre_shr %>% 
+  count(seg.label, year) %>% 
+  filter(n < 10) %>% 
+  nrow()
+
+# all seg.label X year combos missing tre_she means are at small buffers
+all_analysis_segments_mean_tre_shr %>% 
+  count(seg.label, year) %>% 
+  filter(n < 10) %>% 
+  distinct(seg.label, year) %>% 
+  left_join(all_analysis_segments_mean_tre_shr) %>% 
+  group_by(seg.label, year) %>% 
+  filter(buff == min(buff)) %>% 
+  view()
+
+all_analysis_segments_mean_tre_shr %>% 
+  count(seg.label, year) %>% 
+  filter(n < 10) %>% 
+  distinct(seg.label, year) %>% 
+  left_join(all_analysis_segments_mean_tre_shr) %>% 
+  group_by(seg.label, year) %>% 
+  filter(buff == max(buff)) %>% 
+  view()
+
+
+# now add back in segments that didn't make it through that process (I think these are mostly segments that had no TRE+SHR cells at a given buffer distance and forest threshold)
+# Define buffer and threshold values
+buffers = data.frame(buff = seq(30, 300, by = 30))
+
+
+# Cross with your real seg.label-animal.id pairs
+all_segments_cov_buffers <- all_analysis_segments %>%
+  data.frame() %>% 
+  select(seg.label, year, used.available, crossing.step) %>% 
+  crossing(buffers)
+
+all_segments_cov_buffers %>% 
+  count(seg.label, year) %>% 
+  filter(n < 10) %>% 
+  nrow()
+
+all_analysis_segments_mean_tre_shr_full <- all_analysis_segments_mean_tre_shr %>% 
+  right_join(all_segments_cov_buffers) %>%
+  mutate(mean.veg = replace_na(mean.veg, 0))
+
+
+all_analysis_segments_mean_tre_shr_full %>%
+  filter(is.na(mean.veg)) %>% 
+  distinct(seg.label, year) %>% 
+  left_join(all_analysis_segments_mean_tre_shr_full) %>% 
+  view()
+
+saveRDS(all_analysis_segments_mean_tre_shr_full, here("data/all_analysis_segments_mean_tre_shr_full"))
 
 
 
-saveRDS(all_analysis_segment_habitat, here("data/all_analysis_segment_tre_shr"))
-
-
-# checking below here
-all_hr_road_habitat <- readRDS(here("data/all_hr_road_habitat_95"))
-
+# OPTIONAL below here. checking ----
 
 # how much do mean.tre.shr and mean.dev vary between years?
 zz <- all_hr_road_habitat %>% 
