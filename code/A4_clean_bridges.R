@@ -456,5 +456,5 @@ all_bridges_filtered %>%
 st_read(here("data/shapefiles/final_cleaned_bridge_layer.shp")) %>% 
   saveRDS(here("data/final_cleaned_bridge_layer"))
 
-
+final_cleaned_bridge_layer <- readRDS(here("data/final_cleaned_bridge_layer"))
 
