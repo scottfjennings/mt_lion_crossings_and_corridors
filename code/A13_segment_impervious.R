@@ -47,16 +47,16 @@ writeRaster(
 
 # reading data
 # home range utilization distributions from A2_fit_ctmm_homerange.R
-
-combined_puma_homeranges_95 <- st_read(here("data/shapefiles/combined_puma_homeranges_95.shp"))
+aLoCoH_hrs_99_combined_sonoma_napa <- readRDS(here("model_objects/a_LoCoH home ranges/aLoCoH_hrs_99_combined_sonoma_napa"))
 
 # this is to filter the habitat raster to speed processing time when extracting values around each road segment. need the 300 m buffer to get all the habitat for segments that are right on the homerange edge.
-hab_masker <- st_buffer(combined_puma_homeranges_95, 300)
+hab_masker <- st_buffer(aLoCoH_hrs_99_combined_sonoma_napa, 300) %>% 
+  st_transform(crs = 26910)
 
 
 # roads 
-# this is just the segments in the combined homerange polygon for the 12 analysis lions
-segments_in_combined_homeranges <- readRDS(here("data/segments_in_combined_homeranges"))
+all_analysis_segments <- readRDS(here("data/all_analysis_segments"))
+
 
 
 # impervious raster from above
@@ -76,8 +76,8 @@ imperv_cropped <- project(imperv_cropped, "EPSG:26910") # for some reason need t
   
   # function to create buffer around road segment
   buffer_roads <- function(zbuff) {
-    buff_road <- segments_in_combined_homeranges %>% 
-      group_by(seg.label) %>% 
+    buff_road <- all_analysis_segments %>% 
+      group_by(seg.label, year) %>% 
       st_buffer(., zbuff, endCapStyle = "ROUND") %>% 
       mutate(buff = zbuff)
   }
@@ -86,16 +86,118 @@ imperv_cropped <- project(imperv_cropped, "EPSG:26910") # for some reason need t
   
   hr_road_buffers_df <- hr_road_buffers %>% 
     data.frame() %>% 
-    select(seg.label, buff) %>% 
+    select(seg.label, year, buff) %>% 
     mutate(ID = row_number()) 
   # add ID field because terra::extract() has this argument "ID - logical. Should an ID column be added? If so, the first column returned has the IDs (record numbers) of y" and adding the same field here allows joining in the next line
   
   # extract habitat along roads
-  lyr_ext <- terra::extract(hr_imperv, hr_road_buffers, cells = TRUE)  %>% 
+  lyr_ext <- terra::extract(impervious_rast, hr_road_buffers, cells = TRUE)  %>% 
     full_join(hr_road_buffers_df) %>% 
     rename("percent.impervious" = mrlc_download__NLCD_2019_Impervious_L48)
   
-  # calculate mean per buffer per segment and rejoin with segments_in_combined_homeranges to add geometry field back
+  
+  # mask habitat to home range. all 3 raster layers ----
+  #' get_analysis_segment_impervious
+  #' 
+  #' extract habitat values from USDA RAP layers 
+  #' this is the step where the roads get restricted to the home range of each mt lion
+  #'
+  #' @param zsegment 
+  #' 
+  #' @return data frame with the zveg value for each cell within each buffer polygon for each segment
+  #'
+  #' @examples
+  get_analysis_segment_impervious <- function(zsegment) {
+    
+    seg_df <- all_analysis_segments %>% 
+      filter(seg.label == zsegment)
+    
+    
+    buffer_roads <- function(zbuff) {
+      buff_road <- seg_df %>% 
+        group_by(seg.label) %>% 
+        st_buffer(., zbuff, endCapStyle = "ROUND") %>% 
+        mutate(buff = zbuff)
+    }
+    
+    hr_road_buffers <- map_df(seq(30, 300, by = 30), buffer_roads)
+    
+    hr_road_buffers_df <- hr_road_buffers %>% 
+      data.frame() %>% 
+      select(seg.label, buff, year) %>% 
+      mutate(ID = row_number())
+    
+    # extract habitat along roads
+    impervious_extract <- terra::extract(impervious_rast, hr_road_buffers)
+    
+    seg_impervious <- impervious_extract %>% 
+      full_join(hr_road_buffers_df) %>% 
+      rename("percent.impervious" = mrlc_download__NLCD_2019_Impervious_L48)
+    
+    seg_impervious_summarized <- seg_impervious %>%
+      #select(seg.label, percent.impervious, buff) %>% 
+      group_by(seg.label, buff) %>% 
+      summarise(mean.percent.impervious = mean(percent.impervious, na.rm = TRUE),
+                max.percent.impervious = max(percent.impervious, na.rm = TRUE),
+                med.percent.impervious = median(percent.impervious, na.rm = TRUE),
+                num.cell = n(),
+                num.cell.50 = sum(percent.impervious >= 50, na.rm = TRUE),
+                num.cell.20 = sum(percent.impervious >= 20, na.rm = TRUE),
+                num.cell.g0 = sum(percent.impervious > 0, na.rm = TRUE),
+                num.cell.0 = sum(percent.impervious == 0, na.rm = TRUE)) %>% 
+      ungroup() %>% 
+      mutate(percent.dev.o.l.m.h = 100 * (num.cell.g0/num.cell),
+             percent.dev.l.m.h = 100 * (num.cell.20/num.cell),
+             percent.dev.m.h = 100 * (num.cell.50/num.cell),
+             percent.undev = 100 * (num.cell.0/num.cell))
+    
+    
+    return(seg_impervious_summarized)
+  }
+  
+  
+system.time(  
+all_analysis_segment_impervious <- map_df(distinct(all_analysis_segments, seg.label) %>% pull(seg.label), get_analysis_segment_impervious)  
+) # 9554.26 
+  
+  
+saveRDS(all_analysis_segment_impervious, here("data/all_analysis_segment_impervious"))
+
+# mean percent not calculated for a small proportion:
+filter(all_analysis_segment_impervious, is.na(mean.percent.impervious)) %>% nrow()
+
+filter(all_analysis_segment_impervious, is.na(mean.percent.impervious)) %>%
+  distinct(seg.label) %>% 
+  left_join(all_analysis_segment_impervious) %>% 
+  view()
+
+# looks like problem was not having na.rm = TRUE in the function above
+# fixed that but don't want to rerun every segment today (9/2/25)
+
+# quick fix to avoid rerunning every segment
+second_try_segs <- filter(all_analysis_segment_impervious, is.na(mean.percent.impervious)) %>%
+  distinct(seg.label) %>% 
+  pull(seg.label)
+
+system.time(  
+  second_try_segs_impervious <- map_df(second_try_segs, get_analysis_segment_impervious)  
+) # 9554.26 
+
+all_analysis_segment_impervious_full <- all_analysis_segment_impervious %>% 
+  filter(!seg.label %in% second_try_segs) %>% 
+  bind_rows(second_try_segs_impervious)
+# end quick fix
+
+
+# if redoing without the above quick fix above, change input df to all_analysis_segment_impervious
+all_analysis_segment_impervious_full <- all_analysis_segment_impervious_full %>% 
+  full_join(all_analysis_segments)
+
+
+saveRDS(all_analysis_segment_impervious_full, here("data/all_analysis_segment_impervious_full"))
+
+
+# calculate mean per buffer per segment and rejoin with segments_in_combined_homeranges to add geometry field back
   all_hr_road_impervious <- lyr_ext %>%
     select(seg.label, percent.impervious, buff) %>% 
     group_by(seg.label, buff) %>% 
