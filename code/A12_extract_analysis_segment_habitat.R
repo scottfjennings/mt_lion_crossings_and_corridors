@@ -72,7 +72,7 @@ get_analysis_segment_mean_habitat <- function(zyear, zveg) {
 system.time(
   all_analysis_segments_mean_tre_shr  <- map2_df(seq(2016, 2023), "tre_shr", get_analysis_segment_mean_habitat)
 ) # 1166 Aug 2025
-
+# 1679
 all_analysis_segments_mean_tre_shr %>% 
   count(seg.label, year) %>% 
   filter(n < 10) %>% 
@@ -149,7 +149,7 @@ saveRDS(all_analysis_segments_mean_tre_shr_full, here("data/all_analysis_segment
 # run for development ----
 # not running for now 9/2/25
 system.time(
-  all_analysis_segments_mean_tre_shr  <- map2_df(seq(2016, 2023), "dev", get_analysis_segment_mean_habitat)
+  all_analysis_segments_mean_dev  <- map2_df(seq(2016, 2023), "dev", get_analysis_segment_mean_habitat)
 ) # 1166 Aug 2025
 
 
