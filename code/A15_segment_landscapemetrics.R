@@ -18,8 +18,6 @@ all_analysis_segments <- readRDS(here("data/all_analysis_segments"))
 
 # all_analysis_segments <- all_analysis_segments[1:100,]
 
-study_years = seq(2016, 2023)
-
 # functions to calculate various landscape metrics for each segment across various scales ----
 
 # I tested a number of landscape metrics available through the landscapemetrics package
@@ -54,7 +52,7 @@ get_hr_road_patch_cohesion_treshr <- function(zyear, layer_type = "tre_shr") {
   buffers <- c(100, 200, 300)
   
   all_analysis_segments_yr <- all_analysis_segments %>% 
-    filter(year == zyear, seg.label == "Hwy 12_Sonoma_1_P13_29892_25455")
+    filter(year == zyear)
   
   # Load preprocessed raster
   layer_path <- here("data/processed_habitat_rasters", paste0(layer_type, "_", zyear, ".tif"))
@@ -142,8 +140,10 @@ get_hr_road_patch_cohesion_treshr <- function(zyear, layer_type = "tre_shr") {
   
   message("Values calculated for ", zyear)
   
-  return(results)
+  saveRDS(results, here(paste("data/all_analysis_segments_cohesion_treshr", zyear, sep = "_")))
+  #return(results)
 }
+
 
 
 
@@ -155,7 +155,17 @@ system.time(
 
 system.time(
   all_hr_road_patch_cohesion_treshr  <- map_df(seq(2016, 2023), get_hr_road_patch_cohesion_treshr)
-) # 24434.59 
+) # 27290.06  7.6 hrs 
+
+
+all_hr_road_patch_cohesion_treshr <- bind_rows(readRDS(here("data/all_analysis_segments_cohesion_treshr_2016")),
+                                               readRDS(here("data/all_analysis_segments_cohesion_treshr_2017")),
+                                               readRDS(here("data/all_analysis_segments_cohesion_treshr_2018")),
+                                               readRDS(here("data/all_analysis_segments_cohesion_treshr_2019")),
+                                               readRDS(here("data/all_analysis_segments_cohesion_treshr_2020")),
+                                               readRDS(here("data/all_analysis_segments_cohesion_treshr_2021")),
+                                               readRDS(here("data/all_analysis_segments_cohesion_treshr_2022")),
+                                               readRDS(here("data/all_analysis_segments_cohesion_treshr_2023")))
 
 
 # should be up to 9 records per seg.label per year
@@ -198,25 +208,19 @@ all_segments_buff_thresh %>%
 
 
 #all_hr_road_patch_cohesion_treshr <- readRDS(here("data/all_hr_road_patch_cohesion_treshr"))
-all_analysis_segments_cohesion_treshr <- all_hr_road_patch_cohesion_treshr %>% 
+all_analysis_segments_cohesion_treshr_full <- all_hr_road_patch_cohesion_treshr %>% 
   select(-class) %>% 
-  right_join(all_segments_buff_thresh)
+  right_join(all_segments_buff_thresh) %>% 
+  mutate(cohesion = replace_na(cohesion, 0),
+         np = replace_na(np, 0),
+         patch.touches.road = replace_na(patch.touches.road, 0))
 
 # checking again
-all_analysis_segments_cohesion_treshr %>%
+all_analysis_segments_cohesion_treshr_full %>%
   count(seg.label, year) %>%
   filter(n < 9) %>% 
   nrow()
 
-
-saveRDS(all_analysis_segments_cohesion_treshr, here("data/all_analysis_segments_cohesion_treshr"))
-all_analysis_segments_cohesion_treshr <- readRDS(here("data/all_analysis_segments_cohesion_treshr"))
-
-# filling NAs
-all_analysis_segments_cohesion_treshr_full <- all_analysis_segments_cohesion_treshr %>% 
-  mutate(cohesion = replace_na(cohesion, 0),
-         np = replace_na(np, 0),
-         patch.touches.road = replace_na(patch.touches.road, FALSE))
 
 saveRDS(all_analysis_segments_cohesion_treshr_full, here("data/all_analysis_segments_cohesion_treshr_full"))
 
