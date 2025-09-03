@@ -39,7 +39,8 @@ available_segments_years <- segments_in_homeranges %>%
   distinct() %>% 
   st_transform(crs = 26910) %>% 
   st_as_sf() %>% 
-  mutate(used.available = 0)
+  mutate(used.available = 0,
+         seg.length = st_length(.))
 
 any(st_is_empty(available_segments_years))
 
