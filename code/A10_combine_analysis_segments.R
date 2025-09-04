@@ -10,6 +10,7 @@ library(landscapemetrics)
 library(here)
 library(tidyverse)
 
+source(here("code/utilities.R"))
 
 # first the available road segments
 # this is the equal length (888m) segments in the combined homerange polygon for the analysis lions
@@ -26,9 +27,10 @@ segments_in_homeranges <- readRDS(here("data/segments_in_puma_homeranges")) %>%
   select(-all.in.sonoma.napa) %>% 
   filter(!animal.id %in% c("P21", "P30", "P34"))
 
-# where lion home ranges overlap, only need one record per year for each segment, 
+# for extracting habitat variables where lion home ranges overlap, only need one record per year for each segment, 
 # so add in lions_years to ensure have all required years,
 # then remove animal.id and run distinct()
+# because this starts out with only the valid lion-year combos, this effectively makes a different "available" combined polygon for each year, which is good
 available_segments_years <- segments_in_homeranges %>% 
   left_join(lions_years, relationship = "many-to-many") %>% 
   select(-animal.id) %>%
@@ -41,8 +43,19 @@ available_segments_years <- segments_in_homeranges %>%
   st_as_sf() %>% 
   mutate(used.available = 0,
          seg.length = st_length(.))
-
+# seg.length now may be shorter than the original equal length if the year specific home ranges only capture a portion of it
 any(st_is_empty(available_segments_years))
+
+
+# for actual analysis want all segment-lion-year combos 
+available_segments_lions_years <- segments_in_homeranges %>% 
+  left_join(lions_years, relationship = "many-to-many") %>% 
+  distinct() %>% 
+  st_transform(crs = 26910) %>% 
+  st_as_sf() %>% 
+  mutate(used.available = 0,
+         seg.length = st_length(.))
+
 
 # crossing all segments in the combined home range polygon with all years in the study makes about 2x segmentXyear combos that need habitat values extracted at each buffer distance
 #segments_in_combined_homeranges <- readRDS(here("data/segments_in_combined_homeranges")) %>% 
@@ -77,6 +90,11 @@ used_segments_years <- all_bbmm_roads_df_naive  %>%
 
 all_analysis_segments <- bind_rows(used_segments_years, available_segments_years)
 
+all_analysis_segments_by_lion <- used_segments_years %>% 
+  animal.id_from_crossing.step() %>% 
+  bind_rows(available_segments_lions_years)
+
+
 # checking
 # any empty geometries? should be FALSE
 # pretty sure I fixed these by usign left join above to exclude segments with no BBMM calculated, but still double checking
@@ -88,6 +106,11 @@ all_analysis_segments %>%
   count(seg.label, year) %>% 
   filter(n > 1)
 
+# should only be 1 seg.label per year per lion
+all_analysis_segments_by_lion %>% 
+  data.frame() %>% 
+  count(seg.label, animal.id, year) %>% 
+  filter(n > 1)
 
 
 # and a plot to see if anything looks funky
@@ -97,6 +120,11 @@ ggplot() +
 
 
 saveRDS(all_analysis_segments, here("data/all_analysis_segments"))
+
+
+saveRDS(all_analysis_segments_by_lion, here("data/all_analysis_segments_by_lion"))
+
+
 
 all_analysis_segments %>% 
 #readRDS(here("data/all_analysis_segments")) %>% 
