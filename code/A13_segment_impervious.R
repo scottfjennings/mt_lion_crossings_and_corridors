@@ -134,6 +134,8 @@ all_analysis_segment_impervious <- map_df(distinct(all_analysis_segments, seg.la
   
 saveRDS(all_analysis_segment_impervious, here("data/all_analysis_segment_impervious"))
 
+all_analysis_segment_impervious <- readRDS(here("data/all_analysis_segment_impervious"))
+
 # mean percent not calculated for a small proportion:
 filter(all_analysis_segment_impervious, is.na(mean.percent.impervious)) %>% nrow()
 
