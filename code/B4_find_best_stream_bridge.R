@@ -8,6 +8,7 @@ library(tidyverse)
 library(sf)
 library(here)
 library(lme4)
+library(units)
 library(AICcmodavg)
 
 source(here("code/helper_data.R"))
@@ -15,9 +16,8 @@ source(here("code/helper_data.R"))
 # tally number of road/stream intersections per segment ----
 
 
-napa_sonoma_rds_equal_segs_df <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>%
-  bind_rows() %>% 
-  st_as_sf()
+all_analysis_segments <- readRDS(here("data/all_analysis_segments"))
+
 # I created stream_road_Intersect and napa_sonoma_streams in ArcGIS pro by:
 
 # 1. import the CARi stream layer from the Z drive and the final_cleaned_road layer and county boundaries from this project folder 
@@ -30,16 +30,16 @@ napa_sonoma_rds_equal_segs_df <- readRDS(here("data/napa_sonoma_rds_equal_segs")
 # did this for final_cleaned_road and 
 # stream_road_Intersect <- st_read(here("data/shapefiles/stream_road_Intersect.shp"))
 # napa_sonoma_rds_equal_segs - using this one b/c it includes seg.label
-stream_segment_Intersect <- st_read(here("data/shapefiles/stream_segment_Intersect.shp"))
+analysis_seg_riparian_intersection <- st_read(here("data/shapefiles/analysis_seg_riparian_intersection.shp"))
 
 
 # 9/2/25 trying to do the stream road intersection here in R
 
 
 
-stream_segment_Intersect_df <- stream_segment_Intersect %>% 
+analysis_seg_riparian_intersection_df <- analysis_seg_riparian_intersection %>% 
   data.frame() %>% 
-  select(name, orig_class, source_dat, clicklabel, leglabel, seg_lbl, -geometry) %>% 
+  select(name, orig_class, clicklabel, leglabel, seg_lbl, year, -geometry) %>% 
   mutate(orig_class = str_replace(orig_class, "Stream/River: Hydrographic Category = ", ""))
 
 
@@ -58,15 +58,23 @@ keep_class = c("FC", "C", "TC", "TD", "PEMCx", "Canal/Ditch", "Connector", "PEMF
 stream_classifications <- read.csv(here("data/stream_classification_updated.csv")) %>% 
   mutate(keep_creek = orig_class %in% keep_class)
 
-streams_per_segment <- stream_segment_Intersect_df %>% 
-  full_join(stream_classifications) %>% 
+analysis_seg_riparian_intersection_df_classification <- analysis_seg_riparian_intersection_df %>% 
+  left_join(stream_classifications %>% distinct(orig_class, keep_creek))
+# this shouldn't add any rows
+nrow(analysis_seg_riparian_intersection_df_classification) == nrow(analysis_seg_riparian_intersection_df)
+
+
+streams_per_segment <- analysis_seg_riparian_intersection_df_classification %>% 
   filter(keep_creek == TRUE) %>% 
   rename(seg.label = seg_lbl) %>% 
-  group_by(seg.label) %>% 
+  group_by(seg.label, year) %>% 
   summarise(num.creek = n()) %>% 
   ungroup() %>% 
-  full_join(napa_sonoma_rds_equal_segs_df %>% data.frame() %>% select(seg.label)) %>% 
-  mutate(num.creek = replace_na(num.creek, 0))
+  full_join(all_analysis_segments %>% data.frame() %>% select(seg.label, year, seg.length, used.available)) %>% 
+  mutate(num.creek = replace_na(num.creek, 0),
+         seg.length.km = as.numeric(seg.length)/1000,
+         num.creek.per.km = num.creek/seg.length.km,
+         riparian.binary = as.numeric(num.creek > 0))
 
 saveRDS(streams_per_segment, here("data/analysis_inputs/streams_per_segment"))
 
@@ -83,22 +91,26 @@ bridges_buff10 <- final_cleaned_bridge_layer %>%
 
 
 
-seg_bridges <- st_join(bridges_buff10, napa_sonoma_rds_equal_segs_df) %>% 
+analysis_segment_bridges <- st_join(bridges_buff10, all_analysis_segments) %>% 
   #separate(seg.label, c("midpoint.label", "leftcity", "road.num", "seg.num"), sep = "_", remove = FALSE) %>% 
-  rowwise() %>% # grepl in the next step doesn't work right without rowwise() but doesn't throw error
-  mutate(correct.road = label.x == label.y)
+  #rowwise() %>% # grepl in the next step doesn't work right without rowwise() but doesn't throw error
+  mutate(correct.road = str_detect(seg.label, label)) %>% 
+  filter(!is.na(seg.label))
 
-filter(seg_bridges, correct.road == FALSE) %>% view()
+filter(analysis_segment_bridges, correct.road == FALSE) %>% view()
 
-bridges_per_segment <- seg_bridges %>% 
+bridges_per_segment <- analysis_segment_bridges %>% 
   filter(correct.road == TRUE) %>% 
   data.frame() %>% 
   select(-geometry) %>% 
-  group_by(seg.label) %>% 
+  group_by(seg.label, year) %>% 
   summarise(num.bridge = n()) %>% 
   ungroup() %>% 
-  full_join(napa_sonoma_rds_equal_segs_df %>% data.frame() %>% select(seg.label)) %>% 
-  mutate(num.bridge = replace_na(num.bridge, 0))
+  full_join(all_analysis_segments %>% data.frame() %>% select(seg.label, year, seg.length, used.available)) %>% 
+  mutate(num.bridge = replace_na(num.bridge, 0),
+         seg.length.km = as.numeric(seg.length)/1000,
+         num.bridge.per.km = num.bridge/seg.length.km,
+         bridge.binary = as.numeric(num.bridge > 0))
 
 saveRDS(bridges_per_segment, here("data/analysis_inputs/bridges_per_segment"))
 
@@ -106,58 +118,47 @@ saveRDS(bridges_per_segment, here("data/analysis_inputs/bridges_per_segment"))
 # compare the bridge vs stream layers for predicting number of crossings per segment ----
 
 
-# read segment crossing values from A11_sum_segment_crossings.R
+# read segment crossing values from A10_combine_analysis_segments.R
 # this has just the lion X months that there is real data for
 # this is crossings summed for each segmentXmonthXlion combination, only considering naive crossed roads
 # the 0s ending to the file name indicates this has the uncrossed segments added back in
-monthly_seg_crossings_naive_roads_only_0s <- readRDS(here("data/analysis_inputs/monthly_seg_crossings_naive_roads_only_0s")) %>% 
-  data.frame() %>%  
-  select(animal.id, year, month, seg.label, which.steps, monthly.seg.wt.crossing, monthly.seg.raw.crossing)
+all_analysis_segments_by_lion <- readRDS(here("data/all_analysis_segments_by_lion"))
 
-
-monthly_seg_crossings_naive_roads_only_0s <- monthly_seg_crossings_naive_roads_only_0s %>% 
-  right_join(readRDS(here("data/full_lion_year_month_seg"))) %>% 
-  right_join(readRDS(here("data/hr_segments_prop_in_developed"))) %>% 
-  filter(prop.seg.in.dev50 == 0) %>% 
-  data.frame() %>%  
-  select(animal.id, year, month, seg.label, which.steps, monthly.seg.wt.crossing, monthly.seg.raw.crossing)
-
-
+summary(all_analysis_segments_by_lion)
+all_analysis_segments_by_lion %>% 
+  data.frame() %>% 
+  count(used.available)
 
 
 # streams_per_segment and bridges_per_segment have segments outside all home ranges so this join will have NA for animal.id, year, month
 bridges_creeks <- full_join(readRDS(here("data/analysis_inputs/streams_per_segment")), 
-                                    readRDS(here("data/analysis_inputs/bridges_per_segment")))
+                                    readRDS(here("data/analysis_inputs/bridges_per_segment"))) %>% 
+  select(seg.label, year, riparian.binary, bridge.binary)
 
 # any NA
 bridges_creeks %>%
   filter(if_any(everything(), is.na)) %>% nrow()
-# good 3/20/25
+# good 9/3/25
 
 
-bridges_creeks_crossings <- bridges_creeks %>% 
-  right_join(monthly_seg_crossings_naive_roads_only_0s)
+bridges_creeks_analysis_df <- bridges_creeks %>% 
+  full_join(all_analysis_segments_by_lion) %>% 
+  data.frame() %>% 
+  select(seg.label, animal.id, used.available, bridge.binary, riparian.binary)
 
-filter(bridges_creeks_crossings, is.na(monthly.seg.raw.crossing)) %>% nrow()
-# good June 2025
-
-# save this for the main analysis
-saveRDS(bridges_creeks_crossings, here("data/analysis_inputs/bridges_creeks_crossings"))
-
+# shouldn't add more rows than are in all_analysis_segments_by_lion
+nrow(all_analysis_segments_by_lion) == nrow(bridges_creeks_analysis_df)
 
 
 # some checking for number of records:
 # should now be just 1 record for each segment, mt lion, year, month
-count(bridges_creeks_crossings, seg.label, animal.id, year, month) %>% filter(n > 1) %>% nrow()
+count(bridges_creeks_analysis_df, seg.label, animal.id, year) %>% filter(n > 1) %>% nrow()
 # if nrow = 0, good
-count(bridges_creeks_crossings, animal.id, year, month) %>% nrow()
-# should still be 299 as of 3/20/25
-
 
   # Fit models
 bridges_creeks_mods <- list(
-    "bridge" = lmer(monthly.seg.raw.crossing ~ num.bridge + offset(log(monthly.seg.wt.crossing + 0.0001)) + (1|animal.id), data = bridges_creeks_crossings, REML = FALSE),
-    "creek" = lmer(monthly.seg.raw.crossing ~ num.creek + offset(log(monthly.seg.wt.crossing + 0.0001)) + (1|animal.id), data = bridges_creeks_crossings, REML = FALSE)
+    "bridge" = glmer(used.available ~ bridge.binary + (1|animal.id), data = bridges_creeks_analysis_df, family = binomial(link = "logit")),
+    "creek" = glmer(used.available ~ riparian.binary + (1|animal.id), data = bridges_creeks_analysis_df, family = binomial(link = "logit"))
   )
   
 aictab(bridges_creeks_mods, names(bridges_creeks_mods)) %>% 
@@ -165,5 +166,5 @@ aictab(bridges_creeks_mods, names(bridges_creeks_mods)) %>%
 
 
 
-# stream X road intersection points is by far better supported predictor of # road crossings than the cleaned bridge layer (dAICc = 753.979)
+# stream X road intersection points is by far better supported predictor of # road crossings than the cleaned bridge layer (dAICc = 446.2608)
 # this may be due to the segments with bridges over non-streams
