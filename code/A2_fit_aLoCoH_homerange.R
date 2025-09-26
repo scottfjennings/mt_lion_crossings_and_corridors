@@ -16,7 +16,8 @@ analysis_table <- readRDS(here("data/analysis_table"))  %>%
            remove = FALSE) %>% 
   st_transform(crs = 26910) %>% 
   rename("DATE" = datetime.local,
-         "ID" = animal.id)
+         "ID" = animal.id) %>% 
+  mutate(year = year(DATE))
 
 
 analysis_table %>% 
@@ -151,6 +152,106 @@ all_lions <- distinct(analysis_table, ID) %>% pull(ID)
 safe_all_lions_hr <- map(all_lions, safely(fit_save_aLoCoH))
 
 
+# now a wrapper to run and save for each lion each year ---- 
+
+fit_save_aLoCoH_year <- function(zlion, zyear) {
+  # Start timer
+  start_time <- Sys.time()
+  
+  # Run your analysis
+  lion_df <- analysis_table %>%
+    filter(ID == zlion, year == zyear)
+  
+
+    
+    # run LoCoH on each subset with map()
+    lion_year_hr <- a_LoCoH_HR(lion_df, iso_levels = c(0.99, 1))
+    
+   
+    lion_year_hr <- lion_year_hr %>% 
+      mutate(ID = zlion,
+             year = zyear)
+  
+  
+  # End timer
+  end_time <- Sys.time()
+  elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  
+  
+  saveRDS(lion_year_hr, here(paste("model_objects/a_loCoH home ranges/by_lion_year/", zlion, "_", zyear, "_hr", sep = "")))
+  
+}
+
+# fit_save_aLoCoH("P12")
+all_lions_years <- analysis_table %>% 
+  data.frame() %>% 
+  distinct(ID, year) %>% 
+  group_by(ID) %>% 
+  mutate(num.yrs = n()) %>% 
+  ungroup() %>% 
+  filter(num.yrs > 1)
+
+
+fit_save_aLoCoH_year("P1", 2016)
+
+safe_all_lions_hr <- map2(all_lions_years$ID, all_lions_years$year, safely(fit_save_aLoCoH_year))
+
+# Extract errors as character strings
+all_lions_years_with_errors <- all_lions_years %>%
+  mutate(error = map_chr(safe_all_lions_hr, ~ if (!is.null(.x$error)) .x$error$message else NA_character_))
+
+
+zz <- readRDS(here("model_objects/a_loCoH home ranges/by_lion_year/P1_2016_hr"))
+
+ggplot() + geom_sf(data = zz, aes(color = iso_level), fill = NA)
+
+
+# combine annual home ranges from disk 
+
+aLoCoH_hrs <- readRDS(here("model_objects/a_LoCoH home ranges/aLoCoH_hrs"))
+
+
+
+single_year_lions <- analysis_table %>% 
+  data.frame() %>% 
+  distinct(ID, year) %>% 
+  group_by(ID) %>% 
+  mutate(num.yrs = n()) %>% 
+  filter(num.yrs == 1) %>% 
+  distinct(ID, year) 
+
+
+single_year_lion_hrs <- single_year_lions %>% 
+  left_join(readRDS(here("model_objects/a_LoCoH home ranges/aLoCoH_hrs")))
+
+
+
+lion_year_hr_files = list.files(here("model_objects/a_LoCoH home ranges/by_lion_year"), full.names = TRUE)
+
+multi_year_lion_hrs <- map_df(lion_year_hr_files, readRDS)
+
+lion_year_hr_99 <- bind_rows(single_year_lion_hrs, multi_year_lion_hrs) %>% 
+  filter(!ID %in% c("P21", "P30", "P34"), iso_level == 0.99)
+
+lion_year_hr_100 <- bind_rows(single_year_lion_hrs, multi_year_lion_hrs) %>% 
+  filter(!ID %in% c("P21", "P30", "P34"), iso_level == 1.0) 
+
+lion_year_hr <- bind_rows(single_year_lion_hrs, multi_year_lion_hrs) %>% 
+  filter(!ID %in% c("P21", "P30", "P34")) %>% 
+  st_as_sf()
+
+
+saveRDS(lion_year_hr_99, here("model_objects/a_LoCoH home ranges/aLoCoH_lion_year_hrs_99_sonoma_napa"))
+
+saveRDS(lion_year_hr_100, here("model_objects/a_LoCoH home ranges/aLoCoH_lion_year_hrs_100_sonoma_napa"))
+
+lion_year_hr_99 <- readRDS(here("model_objects/a_LoCoH home ranges/aLoCoH_lion_year_hrs_99_sonoma_napa")) %>% 
+  st_as_sf()
+
+ggplot() + 
+  geom_sf(data = napa_sonoma_rds_equal_segs) +
+  geom_sf(data = filter(lion_year_hr, ID == "P39", year == 2022), aes(color = as.factor(iso_level)), fill = NA) + 
+  facet_wrap(~ year)
 
 # create shapefile, check home ranges, etc. ----
 
@@ -161,7 +262,8 @@ source("C:/Users/scott.jennings.EGRET/OneDrive - Audubon Canyon Ranch/Projects/g
 
 aLoCoH_hrs <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs"))
 
-
+ggplot() +
+  geom_sf(data = aLoCoH_hrs %>% filter(ID == "P4", iso_level == 1.0))
 
 # p1 and P4 still have interior holes
 
@@ -288,7 +390,7 @@ aLoCoH_hrs_99_sonoma_napa <- aLoCoH_hrs_99 %>%
 saveRDS(aLoCoH_hrs_99_sonoma_napa, here("model_objects/a_loCoH home ranges/aLoCoH_hrs_99_sonoma_napa"))
 
 # as of Aug 29, 2025 P34 is the only lion excluded based on home range quirkiness.
-# p14, P19, and P36 have home ranges partially outside sonoma and napa, but for now I'm just clipping their HR to these counties rather than completely excluding these lions
+# p14, P19, and P36 have home ranges partially outside sonoma and napa, but for now I'm just clipping their HR to these counties rather than completely excluding these lions. 
 aLoCoH_hrs_99_combined <- aLoCoH_hrs_99 %>%
   filter(!ID %in% c("P34")) %>% 
 #  filter(all.in.sonoma.napa == TRUE) %>% 
@@ -300,6 +402,21 @@ aLoCoH_hrs_99_combined_sonoma_napa <- aLoCoH_hrs_99_combined %>%
   st_intersection(sonoma_napa_union) 
 
 saveRDS(aLoCoH_hrs_99_combined_sonoma_napa, here("model_objects/a_LoCoH home ranges/aLoCoH_hrs_99_combined_sonoma_napa"))
+
+
+aLoCoH_hrs_100_combined <- aLoCoH_hrs %>%
+  filter(!ID %in% c("P34"), iso_level == 1.0) %>% 
+  st_transform(crs = 26910) %>% 
+  #  filter(all.in.sonoma.napa == TRUE) %>% 
+  summarise() %>% 
+  st_transform(crs = 4326)
+
+
+aLoCoH_hrs_100_combined_sonoma_napa <- aLoCoH_hrs_100_combined %>% 
+  st_intersection(sonoma_napa_union) 
+
+saveRDS(aLoCoH_hrs_100_combined_sonoma_napa, here("model_objects/a_LoCoH home ranges/aLoCoH_hrs_100_combined_sonoma_napa"))
+
 
 
 # visualizing a-LoCoH home ranges ----
@@ -328,4 +445,6 @@ ggmap(base_map) +
   geom_sf(data = aLoCoH_hrs_99_sonoma_napa, aes(color = ID), fill = NA, linewidth = 1, inherit.aes = FALSE)
 
 
-
+ggplot() +
+  geom_sf(data = sonoma_napa_union, fill = NA) +
+  geom_sf(data = aLoCoH_hrs_100_combined_sonoma_napa)
