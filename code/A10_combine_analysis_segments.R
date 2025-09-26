@@ -13,26 +13,19 @@ library(tidyverse)
 source(here("code/utilities.R"))
 
 # first the available road segments
-# this is the equal length (888m) segments in the combined homerange polygon for the analysis lions
+# this is the equal length segments in the 100% a-LoCoH homerange polygon for the analysis lions
 # from A9_make_road_segments.R
-# expand out to have a record for each segment each year, but to save computing time don't want to include segments in home ranges in years that lion wasn't tracked
-lions_years <- naive_crossings <- readRDS(here("data/puma_steps")) %>% 
-  mutate(year = year(datetime.local)) %>% 
-  data.frame() %>% 
-  filter(!animal.id %in% c("P21", "P30", "P34")) %>% 
-  distinct(animal.id, year)
+# want a record for each segment each year, but to save computing time extracting habita variables  want to exclude dupicate segments where home ranges overlap
 
 
-segments_in_homeranges <- readRDS(here("data/segments_in_puma_homeranges")) %>% 
-  select(-all.in.sonoma.napa) %>% 
-  filter(!animal.id %in% c("P21", "P30", "P34"))
+segments_in_lion_year_homeranges_100 <- readRDS(here("data/segments_in_lion_year_homeranges_100"))
+
 
 # for extracting habitat variables where lion home ranges overlap, only need one record per year for each segment, 
 # so add in lions_years to ensure have all required years,
 # then remove animal.id and run distinct()
 # because this starts out with only the valid lion-year combos, this effectively makes a different "available" combined polygon for each year, which is good
-available_segments_years <- segments_in_homeranges %>% 
-  left_join(lions_years, relationship = "many-to-many") %>% 
+available_segments_years <- segments_in_lion_year_homeranges_100  %>% 
   select(-animal.id) %>%
   group_by(seg.label, year) %>% 
   # some segments for different lions have slightly different geometries so the distinct below doesn't fully work. this summarise fixes that
@@ -47,9 +40,9 @@ available_segments_years <- segments_in_homeranges %>%
 any(st_is_empty(available_segments_years))
 
 
-# for actual analysis want all segment-lion-year combos 
-available_segments_lions_years <- segments_in_homeranges %>% 
-  left_join(lions_years, relationship = "many-to-many") %>% 
+# for actual analysis want all segment-lion-year combos
+
+available_segments_lions_years <- segments_in_lion_year_homeranges_100 %>%
   distinct() %>% 
   st_transform(crs = 26910) %>% 
   st_as_sf() %>% 
@@ -71,12 +64,14 @@ available_segments_lions_years <- segments_in_homeranges %>%
 # need to also add year for each crossing step
 all_bbmm_roads_df_naive <- readRDS(here("data/all_bbmm_roads_df_naive")) %>% 
   filter(!animal.id %in% c("P21", "P30", "P34")) %>%  
+  filter(naive.rd == TRUE) %>% 
+  filter(crossings.per.naive.rd == 1) %>% 
   mutate(seg.label = paste(road.label, crossing.step, sep = "_")) %>% 
   st_transform(crs = 26910) %>% 
   mutate(used.available = 1)
 
 # get the year that each crossing step happened
-steps_years <- naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma_2hr")) %>% 
+steps_years <- readRDS(here("data/naive_crossings_napa_sonoma_2hr")) %>% 
   left_join(readRDS(here("data/puma_steps"))) %>% 
   mutate(year = year(datetime.local)) %>% 
   data.frame() %>% 
@@ -84,13 +79,13 @@ steps_years <- naive_crossings <- readRDS(here("data/naive_crossings_napa_sonoma
   distinct()
 
 used_segments_years <- all_bbmm_roads_df_naive  %>% 
-  select(crossing.step, seg.label, seg.length = crossed.seg.length, used.available, geometry) %>% 
+  select(crossing.step, seg.label, seg.length = crossed.seg.length, used.available, geometry, naive.rd, crossings.per.naive.rd) %>% 
   left_join(steps_years) # need left_join because naive_crossings has steps that BBMM couldn't be calculated for
   
 
 all_analysis_segments <- bind_rows(used_segments_years, available_segments_years)
 
-all_analysis_segments_by_lion <- used_segments_years %>% 
+all_analysis_segments_by_lion_year <- used_segments_years %>% 
   animal.id_from_crossing.step() %>% 
   bind_rows(available_segments_lions_years)
 
@@ -107,7 +102,7 @@ all_analysis_segments %>%
   filter(n > 1)
 
 # should only be 1 seg.label per year per lion
-all_analysis_segments_by_lion %>% 
+all_analysis_segments_by_lion_year %>% 
   data.frame() %>% 
   count(seg.label, animal.id, year) %>% 
   filter(n > 1)
@@ -122,7 +117,7 @@ ggplot() +
 saveRDS(all_analysis_segments, here("data/all_analysis_segments"))
 
 
-saveRDS(all_analysis_segments_by_lion, here("data/all_analysis_segments_by_lion"))
+saveRDS(all_analysis_segments_by_lion_year, here("data/all_analysis_segments_by_lion_year"))
 
 
 
