@@ -1,35 +1,66 @@
 
 
 
+
+
 library(tidyverse)
 library(here)
-library(sf)
 library(lme4)
 library(AICcmodavg)
 library(MuMIn)
-library(readxl)
-library(glmmTMB)
+library(purrr)
 
-
-source(here("code/helper_data.R"))
 
 
 # from C1_analysis_table_model_structure
-main_analysis_table <- readRDS(here("data/analysis_inputs/annual_analysis_table")) %>%
-  mutate(across(c(cohesion.200.50, mean.tre.shr.210, mean.dev.300), ~ as.numeric(scale(.x))),
-         binned.annual.seg.raw.crossing = ifelse(annual.seg.raw.crossing > 0, 1, annual.seg.raw.crossing),
-         prop.year = num.months/12,
-         class = ifelse(class == "Local", as.character(class), "Non-local"),
-         num.creek.bin = pmin(num.creek, 1)) # still treating this as a continuous predictor b/c we believe, given our segment length, that the relative importance of adding 1 more creek intersection is minimal beyond 4 creeks (e.g. creek intersections more than every 300m probably not important)
+analysis_table_complete <- readRDS(here("data/analysis_table_complete"))
+
+
+analysis_table_complete %>% 
+  ungroup() %>% 
+  ggplot() +
+  geom_bar(aes(x = class, fill =  as.factor(used.available))) +
+  facet_wrap(~sex)
+
+
+analysis_table_complete %>% 
+  ungroup() %>% 
+  count(class, sex, used.available) %>% 
+  mutate(used.available = ifelse(used.available == 0, "available", "used")) %>% 
+  pivot_wider(id_cols = c(class, sex), names_from = used.available, values_from = n) %>% 
+  mutate(raw.cross.prob = used/available)
+
+
+analysis_table_complete %>% 
+  ungroup() %>% 
+  ggplot() +
+  stat_density(aes(x = tre.shr, color = as.factor(used.available)), fill = NA)
+
+analysis_table_complete %>% 
+  ungroup() %>% 
+  ggplot() +
+  stat_density(aes(x = cohesion, color = as.factor(used.available)), fill = NA)
+
+analysis_table_complete %>% 
+  ungroup() %>% 
+  ggplot() +
+  stat_density(aes(x = impervious, color = as.factor(used.available)), fill = NA)
+
+analysis_table_complete %>% 
+  filter(impervious > 50) %>% 
+  count(used.available)
+
+
+analysis_table_scaled <- analysis_table_complete %>% 
+  mutate(cohesion = scale(cohesion)[,1],
+         impervious = scale(impervious)[,1],
+         tre.shr = scale(tre.shr)[,1])
 
 
 
-# main_analysis_table <- main_analysis_table %>% 
-#  filter(monthly.seg.raw.crossing < 10)
 
 
-# need to load exploration_model_formulas from C1_
-# initial modelling attempt, glmm with Poisson distribution  ----
+
 
 #' fit_glmer_mods
 #' 
@@ -42,11 +73,11 @@ main_analysis_table <- readRDS(here("data/analysis_inputs/annual_analysis_table"
 #' @returns list of model objects, with names matching the names of zformulas, and an aic table "$aic" for all model structures in zformulas
 #'
 #' @examples
-fit_glmer_mods <- function(zformulas, zfamily = "poisson") {
+fit_glmer_mods <- function(zformulas) {
   
   zmods <- lapply(zformulas, function(fix.stru) {
-    formula <- as.formula(paste("monthly.seg.raw.crossing ~ ", fix.stru, "+ offset(log(monthly.seg.wt.crossing + 0.0001)) + (1|animal.id)"))
-    glmer(formula, data = main_analysis_table, family = zfamily)
+    formula <- as.formula(paste("used.available ~ ", fix.stru, " + (1|animal.id)"))
+    glmer(formula, data = analysis_table_scaled, family = binomial(link = "logit"))
   })
   
   zmods$aic <- aictab(zmods, names(zmods))
@@ -56,287 +87,101 @@ fit_glmer_mods <- function(zformulas, zfamily = "poisson") {
 
 
 
-system.time(
-  exploratory_mods_glmer <- fit_glmer_mods(exploration_model_formulas, "poisson")
-) # 589, 570
 
-
-exploratory_mods_glmer$aic         
-
-summary(exploratory_mods_glmer$cohesion_dev_creek_sex)
-
-
-# Plot residuals vs fitted
-plot(
-  fitted(exploratory_mods_glmer$cohesion_dev_creek_sex), resid(exploratory_mods_glmer$cohesion_dev_creek_sex),
-  xlab = "Fitted Values",
-  ylab = "Residuals",
-  main = "Residuals vs Fitted Values best glmer model",
-  pch = 20,
-  col = "steelblue"
-)
-abline(h = 0, lty = 2, col = "red")
-
-# the best glmm poisson model is still under predicting segments with few crossings and overpredicting segments with a lot of crossings
-# zero inflation is still probably causing problems
-
-# fitting negative binomial with glmmTMB which should be faster than fitting with lme4
-#' fit_glmmTMB_nb_mods
-#' 
-#' General model fitting function using glmmTMB. Useful for exploratory and hypothesis-testing models.
-#' Fits a negative binomial model with an offset and a random effect for animal.id.
-#' 
-#' @param zformulas Named list of fixed effect model structures
-#' 
-#' @return List of model objects, with names matching zformulas, and an AIC table "$aic"
-#' 
-#' @examples
-fit_glmmTMB_nb_mods <- function(zformulas) {
-  
-  zmods <- lapply(zformulas, function(fix.stru) {
-    formula <- as.formula(
-      paste(
-        "monthly.seg.raw.crossing ~", 
-        fix.stru, 
-        "+ offset(log(monthly.seg.wt.crossing + 0.0001)) + (1|animal.id)"
-      )
-    )
-    
-    glmmTMB::glmmTMB(
-      formula = formula,
-      family = glmmTMB::nbinom2(),
-      data = main_analysis_table
-    )
-  })
-  
-  zmods$aic <- aictab(zmods, base = TRUE)
-  
-  return(zmods)
-}
-
-
-system.time(
-  exploratory_mods_glmmtmb_nb <- fit_glmmTMB_nb_mods(exploration_model_formulas[1])
-) # 
-
-
-exploratory_mods$aic         
-
-summary(exploratory_mods$cohesion_dev_creek_sex)
-
-
-# Plot residuals vs fitted
-plot(
-  fitted(exploratory_mods_glmer$cohesion_dev_creek_sex), resid(exploratory_mods_glmer$cohesion_dev_creek_sex),
-  xlab = "Fitted Values",
-  ylab = "Residuals",
-  main = "Residuals vs Fitted Values best glmer model",
-  pch = 20,
-  col = "steelblue"
-)
-abline(h = 0, lty = 2, col = "red")
-
-
-
-# fitting glmmTMB mods which allow more flexible handling of zero inflation, overdispersion ----
-
-
-#' fit_glmmTMB_mods
-#' 
-#' general model fitting function. this should be good for exploratory and hypothesis testing models. fits glmmTMB::glmmTMB models with offset for segment proportion inside each BBMM UD and a random effect for animal.id. allows specifying formula to model the zero-inflated process
-#' 
-#' 
-#' @param zformulas named list of fixed effects model structures
-#' @param zfamily model family to specify the error distribution and link function
-#'
-#' @returns list of model objects, with names matching the names of zformulas, and an aic table "$aic" for all model structures in zformulas
-#'
-#' @examples
-fit_glmmtmb_mods <- function(zresponse, zformulas, zfamily, ziform) {
-  # Ensure zfamily is interpreted correctly
-  if (is.character(zfamily)) {
-    zfamily <- match.fun(zfamily)()  # e.g., "nbinom2" → nbinom2()
-  }
-  
-  form_names <- names(zformulas)
-  
-  zmods <- lapply(zformulas, function(fix.stru) {
-    formula <- as.formula(paste(
-      zresponse, "~", fix.stru,
-      "+ prop.year + offset(log(annual.seg.wt.crossing + 0.0001)) + (1|animal.id)"
-    ))
-    
-    glmmTMB::glmmTMB(
-      formula,
-      data = main_analysis_table,
-      family = zfamily,
-      ziformula = as.formula(ziform)
-    )
-  })
-  
-  names(zmods) <- form_names
-  zmods$aic <- AICcmodavg::aictab(zmods, form_names)
-  return(zmods)
-}
-
-
-
+# initial model formulas  ----
+base_model_formulas <- list(cohesion_treshr_impervious_patchrd_bridgebinary_class = "cohesion + tre.shr + impervious + patchrd + bridge.binary + class",
+                            
+                            cohesion2_treshr_impervious_patchrd_bridgebinary_class = "poly(cohesion, 2) + tre.shr + impervious + patchrd + bridge.binary + class",
+                            cohesion_treshr2_impervious_patchrd_bridgebinary_class =  "cohesion + poly(tre.shr, 2) + impervious + patchrd + bridge.binary + class",
+                            cohesion_treshr_impervious2_patchrd_bridgebinary_class =  "cohesion + tre.shr + poly(impervious, 2) + patchrd + bridge.binary + class",
+                            
+                            cohesion2_treshr2_impervious_patchrd_bridgebinary_class =  "poly(cohesion, 2) + poly(tre.shr, 2) + impervious + patchrd + bridge.binary + class",
+                            cohesion_treshr2_impervious2_patchrd_bridgebinary_class =  "cohesion + poly(tre.shr, 2) + poly(impervious, 2) + patchrd + bridge.binary + class",
+                            cohesion2_treshr_impervious2_patchrd_bridgebinary_class =  "poly(cohesion, 2) + tre.shr + poly(impervious, 2) + patchrd + bridge.binary + class",
+                            
+                            cohesion2_treshr2_impervious2_patchrd_bridgebinary_class =  "poly(cohesion, 2) + poly(tre.shr, 2) + poly(impervious, 2) + patchrd + bridge.binary + class",
+                            
+                            intercept = "1")
 
 
 
 system.time(
-  exploratory_mods_crosscount <- fit_glmmtmb_mods("annual.seg.raw.crossing", exploration_model_formulas, zfamily = "nbinom2", ziform = "~ 0")
-) # 
+  base_crossing_models <- fit_glmer_mods(base_model_formulas)
+) 
+# 113 for base_model_formulas
+
+saveRDS(base_crossing_models, here("model_objects/base_crossing_models"))
+
+base_crossing_models$aic         
 
 
-exploratory_mods_crosscount$aic         
+#Model selection based on AICc:
 
-summary(exploratory_mods_glmmtmb$cohesion_dev_creek_sex)
+#                                                                 K     AICc Delta_AICc AICcWt Cum.Wt       LL
+#cohesion2_treshr2_impervious2_patchrd_bridgebinary_class         13 16820.53       0.00      1      1 -8397.26
+#cohesion2_treshr_impervious2_patchrd_bridgebinary_class          12 16842.72      22.19      0      1 -8409.35
+#cohesion2_treshr2_impervious_patchrd_bridgebinary_class          12 16854.86      34.33      0      1 -8415.42
+#cohesion_treshr2_impervious2_patchrd_bridgebinary_class          12 16867.95      47.41      0      1 -8421.96
+#cohesion2_treshr_impervious_patchrd_bridgebinary_class           11 16877.52      56.99      0      1 -8427.75
+#cohesion_treshr_impervious2_patchrd_bridgebinary_class           11 16877.98      57.45      0      1 -8427.98
+#cohesion_treshr2_impervious_patchrd_bridgebinary_class           11 16895.54      75.00      0      1 -8436.76
+#cohesion_treshr_impervious_patchrd_bridgebinary_class            10 16906.66      86.13      0      1 -8443.32
+#intercept                                                         2 17919.36    1098.83      0      1 -8957.68
 
 
-# Plot residuals vs fitted
-plot(
-  fitted(exploratory_mods_glmmtmb$cohesion_dev_creek_sex), resid(exploratory_mods_glmmtmb$cohesion_dev_creek_sex),
-  xlab = "Fitted Values",
-  ylab = "Residuals",
-  main = "Residuals vs Fitted Values best glmmTMB model",
-  pch = 20,
-  col = "steelblue"
+
+# substantial support for the model with quadratic effect of all continuous
+
+
+# next testing for sex and age interactions with all variables in best from above
+
+
+sex_age_model_formulas <- list(cohesion2_treshr2_impervious2_patchrd_bridgebinary_class =  "poly(cohesion, 2) + poly(tre.shr, 2) + poly(impervious, 2) + patchrd + bridge.binary + class",
+                               
+                               sex.cohesion2_treshr2_impervious2_patchrd_bridgebinary_class =  "sex * poly(cohesion, 2) + poly(tre.shr, 2) + poly(impervious, 2) + patchrd + bridge.binary + class",
+                               cohesion2_sex.treshr2_impervious2_patchrd_bridgebinary_class =  "poly(cohesion, 2) + sex * poly(tre.shr, 2) + poly(impervious, 2) + patchrd + bridge.binary + class",
+                               cohesion2_treshr2_sex.impervious2_patchrd_bridgebinary_class =  "poly(cohesion, 2) + poly(tre.shr, 2) + sex * poly(impervious, 2) + patchrd + bridge.binary + class",
+                               cohesion2_treshr2_impervious2_sex.patchrd_bridgebinary_class =  "poly(cohesion, 2) + poly(tre.shr, 2) + poly(impervious, 2) + sex * patchrd + bridge.binary + class",
+                               cohesion2_treshr2_impervious2_patchrd_sex.bridgebinary_class =  "poly(cohesion, 2) + poly(tre.shr, 2) + poly(impervious, 2) + patchrd + sex * bridge.binary + class",
+                               cohesion2_treshr2_impervious2_patchrd_bridgebinary_sex.class =  "poly(cohesion, 2) + poly(tre.shr, 2) + poly(impervious, 2) + patchrd + bridge.binary + sex * class",
+                               
+                               age.cohesion2_treshr2_impervious2_patchrd_bridgebinary_class =  "age * poly(cohesion, 2) + poly(tre.shr, 2) + poly(impervious, 2) + patchrd + bridge.binary + class",
+                               cohesion2_age.treshr2_impervious2_patchrd_bridgebinary_class =  "poly(cohesion, 2) + age * poly(tre.shr, 2) + poly(impervious, 2) + patchrd + bridge.binary + class",
+                               cohesion2_treshr2_age.impervious2_patchrd_bridgebinary_class =  "poly(cohesion, 2) + poly(tre.shr, 2) + age * poly(impervious, 2) + patchrd + bridge.binary + class",
+                               cohesion2_treshr2_impervious2_age.patchrd_bridgebinary_class =  "poly(cohesion, 2) + poly(tre.shr, 2) + poly(impervious, 2) + age * patchrd + bridge.binary + class",
+                               cohesion2_treshr2_impervious2_patchrd_age.bridgebinary_class =  "poly(cohesion, 2) + poly(tre.shr, 2) + poly(impervious, 2) + patchrd + age * bridge.binary + class",
+                               cohesion2_treshr2_impervious2_patchrd_bridgebinary_age.class =  "poly(cohesion, 2) + poly(tre.shr, 2) + poly(impervious, 2) + patchrd + bridge.binary + age * class"
+                               
 )
-abline(h = 0, lty = 2, col = "red")
-
-
-
 
 
 system.time(
-  exploratory_mods_crossbin <- fit_glmmtmb_mods("binned.annual.seg.raw.crossing", exploration_model_formulas, zfamily = binomial(link = "logit"), ziform = "~ 1")
-) # 
+  sex_age_crossing_models <- fit_glmer_mods(sex_age_model_formulas)
+) #355 
+
+saveRDS(sex_age_crossing_models, here("model_objects/sex_age_crossing_models"))
 
 
-exploratory_mods_crossbin$aic
+sex_age_crossing_models$aic
 
+#Model selection based on AICc:
 
-summary(exploratory_mods_crossbin$dev_sex)
-
-
-# Plot residuals vs fitted
-plot(
-  fitted(exploratory_mods_crossbin$dev_sex), resid(exploratory_mods_crossbin$dev_sex),
-  xlab = "Fitted Values",
-  ylab = "Residuals",
-  main = "Residuals vs Fitted Values best glmmTMB model",
-  pch = 20,
-  col = "steelblue"
-)
-abline(h = 0, lty = 2, col = "red")
-
-
-
-
-
-
-
+#                                                             K     AICc Delta_AICc AICcWt Cum.Wt       LL
+#cohesion2_treshr2_impervious2_patchrd_bridgebinary_sex.class 17 16799.58       0.00   0.52   0.52 -8382.77
+#cohesion2_treshr2_sex.impervious2_patchrd_bridgebinary_class 16 16800.32       0.74   0.36   0.88 -8384.14
+#cohesion2_treshr2_impervious2_patchrd_sex.bridgebinary_class 15 16804.08       4.49   0.05   0.93 -8387.02
+#cohesion2_treshr2_impervious2_sex.patchrd_bridgebinary_class 15 16805.21       5.63   0.03   0.97 -8387.59
+#sex.cohesion2_treshr2_impervious2_patchrd_bridgebinary_class 16 16806.04       6.45   0.02   0.99 -8387.00
+#age.cohesion2_treshr2_impervious2_patchrd_bridgebinary_class 16 16807.87       8.29   0.01   0.99 -8387.92
+#cohesion2_sex.treshr2_impervious2_patchrd_bridgebinary_class 16 16808.99       9.41   0.00   1.00 -8388.48
+#cohesion2_treshr2_age.impervious2_patchrd_bridgebinary_class 16 16813.04      13.45   0.00   1.00 -8390.50
+#cohesion2_treshr2_impervious2_age.patchrd_bridgebinary_class 15 16815.58      16.00   0.00   1.00 -8392.78
+#cohesion2_age.treshr2_impervious2_patchrd_bridgebinary_class 16 16818.51      18.93   0.00   1.00 -8393.24
+#cohesion2_treshr2_impervious2_patchrd_bridgebinary_class     13 16820.53      20.95   0.00   1.00 -8397.26
+#cohesion2_treshr2_impervious2_patchrd_age.bridgebinary_class 15 16820.69      21.11   0.00   1.00 -8395.33
+#cohesion2_treshr2_impervious2_patchrd_bridgebinary_age.class 17 16823.92      24.34   0.00   1.00 -8394.94
 
 
 
-# model validation ----
-# r-squared
+summary(sex_age_crossing_models$cohesion2_treshr2_impervious2_patchrd_bridgebinary_sex.class)
 
-r.squaredGLMM(best_mod)
-
-# cross validation
-cross_validate_best_model <- function(zpuma, zcross) {
-
-    train_data <- crossing_analysis_table %>% filter(animal.id != zpuma)
-    test_data  <- crossing_analysis_table %>% filter(animal.id == zpuma)
-    
-    
-    dev60.creek.class = lmer(as.formula(paste(zcross, "~ dev.60 * num.creek * class + (1|animal.id)")), data = train_data, REML = FALSE)
-    
-      preds = data.frame(preds = predict(dev60.creek.class, newdata = test_data, allow.new.levels = TRUE))
-      results = bind_cols(test_data, preds) %>% 
-        mutate(rmse = sqrt(mean((preds - seg.wt.crossing)^2)),
-               left.out = zpuma)
-
-  return(results)
-}
-
-cv_results <- map2_df(distinct(crossing_analysis_table, animal.id)$animal.id, rep("seg.wt.crossing", nrow(distinct(crossing_analysis_table, animal.id))), cross_validate_best_model)
-
-
-mean(cv_results$rmse)
-
-  ggplot() +
-  geom_point(data = cv_results, aes(x = actuals, y = preds)) +
-    geom_abline()
-
-  
-ggplot(cv_results) +
-  geom_point(aes(x = seg.wt.crossing, y = preds)) +
-  geom_abline() +
-  facet_wrap(~left.out, scales = "free")
-  
-
-cv_results$dev60_bin <- cut(cv_results$dev.60, breaks = 4)  # or choose a different number of bins
-
-ggplot(cv_results) +
-  geom_point(aes(x = seg.wt.crossing, y = preds)) +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-  facet_wrap(~dev60_bin)
-
-
-# plotting best model estimates
-znewdat = expand.grid(sex = c("F", "M"),
-                      dev.60 = seq(0, 1, by = 0.1),
-                      num.creek = seq(0, 3),
-                      class = c("Local", "Collector", "Arterial", "Highway", "Freeway")
-                      #, animal.id = distinct(summed_crossing_analysis_table_long, animal.id)$animal.id
-                      ) 
-
-
-zpred_wt = predict(best_mod, znewdat, se.fit = TRUE, re.form = NA) %>% 
-  data.frame() %>% 
-  bind_cols(znewdat) %>% 
-  mutate(lwr = fit - (1.96 * se.fit),
-         upr = fit + (1.96 * se.fit),
-         dev.60 = dev.60 * 100,
-         sex = ifelse(sex == "F", "Female", "Male"),
-         class = factor(class, levels = c("Local", "Collector", "Arterial", "Highway", "Freeway")))
-
-zpred_wt %>% 
-  filter(sex == "Female") %>% 
-  ggplot() +
-  geom_line(aes(y = fit, x = dev.60, color = as.character(num.creek)), linewidth = 1) +
-  #geom_ribbon(aes(ymin = lwr, ymax = upr, x = dev.60, fill = class), alpha = 0.3) +
-  facet_wrap(~class) +
-  labs(x = "% developed area within 60m of road",
-       y = "# crossings",
-       title = "Mean number of road crossings per mt lion per month\nin each 888m road segment, by road type",
-       color = "Number of\ncreek/river\nintersections",
-       fill = "") +
-  theme_bw() + 
-  guides(colour = guide_legend(reverse=T))+
-  theme(
-    #title = element_text(size = 14),
-    #axis.title = element_text(size = 14),        # Increase axis title size
-    #axis.text = element_text(size = 12),         # Increase axis text size
-    #strip.text = element_text(size = 12),        # Increase facet label size
-    #legend.text = element_text(size = 12),       # Increase legend text size
-    #legend.title = element_text(size = 14),      # Increase legend title size
-    legend.position = c(0.85, 0.2)      
-  )
-
-ggsave(here("figures/dev60.creek.class_600dpi.png"), dpi = 600, width = 6, height = 4)
-
-#######
-
-# fitting hypotheis testing models ----
-
-hypothesis_model_formulas <- list(
-  
-  cohesion.patchrd = "cohesion.200.50 * patch.touches.road", # cohesion importance is dependent on the woody vegetation patch touching the segment
-  cohesion.treshr = "cohesion.200.50 * mean.tre.shr.210", # cohesion importance is dependent on woody vegetation % cover
-  cohesion.treshr = "cohesion.200.50 * I(mean.tre.shr.210^2)", # cohesion importance is dependent on woody vegetation % cover but the relationship is not linear
-  
-)
