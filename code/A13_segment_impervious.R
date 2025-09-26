@@ -47,10 +47,10 @@ writeRaster(
 
 # reading data
 # home range utilization distributions from A2_fit_ctmm_homerange.R
-aLoCoH_hrs_99_combined_sonoma_napa <- readRDS(here("model_objects/a_LoCoH home ranges/aLoCoH_hrs_99_combined_sonoma_napa"))
+aLoCoH_hrs_100_combined_sonoma_napa <- readRDS(here("model_objects/a_LoCoH home ranges/aLoCoH_hrs_100_combined_sonoma_napa"))
 
 # this is to filter the habitat raster to speed processing time when extracting values around each road segment. need the 300 m buffer to get all the habitat for segments that are right on the homerange edge.
-hab_masker <- st_buffer(aLoCoH_hrs_99_combined_sonoma_napa, 300) %>% 
+hab_masker <- st_buffer(aLoCoH_hrs_100_combined_sonoma_napa, 300) %>% 
   st_transform(crs = 26910)
 
 
@@ -129,12 +129,29 @@ impervious_rast <- project(impervious_rast, "EPSG:26910")
   
 system.time(  
 all_analysis_segment_impervious <- map_df(distinct(all_analysis_segments, seg.label) %>% pull(seg.label), get_analysis_segment_impervious)  
-) # 12641.08 
+) # 9831
+
+all_analysis_segment_impervious %>% 
+  count(seg.label) %>% 
+  filter(n != 10) %>% 
+  nrow()
+
+all_analysis_segments %>% data.frame() %>% distinct(seg.label) %>% nrow()
   
   
 saveRDS(all_analysis_segment_impervious, here("data/all_analysis_segment_impervious"))
 
 all_analysis_segment_impervious <- readRDS(here("data/all_analysis_segment_impervious"))
+
+# Sep 16, 2025 quick fix
+# today I realized I extracted habitat covariates for all BBMM roads, not just the naive roads, but I only want to analyze the naive roads.
+# I remade here("data/all_analysis_segments") to just be the naive roads and just crossings that crossed the naive roads once
+# but I don't want to re-extract habitat values because that takes many hours of computing
+# so just doing a filtering join witht he new all_analysis_segments as a quick fix
+all_analysis_segment_impervious <- all_analysis_segment_impervious %>% 
+  right_join(readRDS(here("data/all_analysis_segments")))
+
+saveRDS(all_analysis_segment_impervious, here("data/all_analysis_segment_impervious"))
 
 # mean percent not calculated for a small proportion:
 filter(all_analysis_segment_impervious, is.na(mean.percent.impervious)) %>% nrow()
@@ -170,3 +187,15 @@ filter(all_analysis_segment_impervious_full, is.na(mean.percent.impervious)) %>%
 
 saveRDS(all_analysis_segment_impervious_full, here("data/all_analysis_segment_impervious_full"))
 
+# Sep 16, 2025 quick fix
+# today I realized I extracted habitat covariates for all BBMM roads, not just the naive roads, but I only want to analyze the naive roads.
+# I remade here("data/all_analysis_segments") to just be the naive roads and just crossings that crossed the naive roads once
+# but I don't want to re-extract habitat values because that takes many hours of computing
+# so just doing a filtering join witht he new all_analysis_segments as a quick fix
+all_analysis_segment_impervious_full <- readRDS(here("data/all_analysis_segment_impervious_full"))
+
+
+all_analysis_segment_impervious_full <- all_analysis_segment_impervious_full %>% 
+  right_join(readRDS(here("data/all_analysis_segments")))
+
+saveRDS(all_analysis_segment_impervious_full, here("data/all_analysis_segment_impervious_full"))
