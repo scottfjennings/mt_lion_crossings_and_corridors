@@ -16,22 +16,23 @@ source(here("code/helper_data.R"))
 # this has a row for each road segment in the combined home range polygon, for each year and each buffer distance (30-300, by 30)
 # so this df has many more rows than the others
 
-all_analysis_segment_impervious <- readRDS(here("data/all_analysis_segment_impervious")) %>% 
+all_analysis_segment_impervious_full <- readRDS(here("data/all_analysis_segment_impervious_full")) %>% 
   select(seg.label, buff, mean.percent.impervious)
 
-all_analysis_segments_mean_tre_shr <- readRDS(here("data/all_analysis_segments_mean_tre_shr")) %>% 
+all_analysis_segments_mean_tre_shr_full <- readRDS(here("data/all_analysis_segments_mean_tre_shr_full")) %>% 
   select(seg.label, year, buff, mean.tre.shr = mean.veg)
 
 # read segment crossing values from A10_combine_analysis_segments.R
 
-all_analysis_segments_by_lion <- readRDS(here("data/all_analysis_segments_by_lion")) %>% 
+all_analysis_segments_by_lion_year <- readRDS(here("data/all_analysis_segments_by_lion_year")) %>% 
   data.frame() %>% 
   select(seg.label, year, used.available, animal.id)
 
-composition_scale_analysis_df <- full_join(all_analysis_segments_by_lion, all_analysis_segments_mean_tre_shr) %>% 
-  full_join(all_analysis_segment_impervious)
+composition_scale_analysis_df <- full_join(all_analysis_segments_by_lion_year, all_analysis_segments_mean_tre_shr_full) %>% 
+  full_join(all_analysis_segment_impervious_full)
 
 composition_scale_analysis_df <- composition_scale_analysis_df %>% 
+  distinct() %>% 
   group_by(seg.label, year, animal.id) %>% 
   mutate(num.rec = n()) %>% 
   ungroup() %>% 
@@ -78,34 +79,33 @@ fit_composition_scale_mods <- function(zhab) {
 
 tre_shr_scale_mods <- fit_composition_scale_mods("mean.tre.shr")
 tre_shr_scale_mods$aic
-# 9/3/25 results
-#           Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#3   mean.tre.shr90 3 44868.29      0.000    1.000  0.396 -22431.14 0.3958332
-#2   mean.tre.shr60 3 44869.06      0.776    0.679  0.269 -22431.53 0.6644077
-#7  mean.tre.shr210 3 44869.09      0.808    0.668  0.264 -22431.55 0.9287166
-#4  mean.tre.shr120 3 44873.16      4.870    0.088  0.035 -22433.58 0.9633852
-#6  mean.tre.shr180 3 44874.03      5.742    0.057  0.022 -22434.01 0.9858065
-#8  mean.tre.shr240 3 44875.66      7.371    0.025  0.010 -22434.83 0.9957361
-#5  mean.tre.shr150 3 44878.14      9.854    0.007  0.003 -22436.07 0.9986054
-#9  mean.tre.shr270 3 44880.22     11.938    0.003  0.001 -22437.11 0.9996173
-#10 mean.tre.shr300 3 44882.17     13.883    0.001  0.000 -22438.08 1.0000000
-#1   mean.tre.shr30 3 44946.29     78.002    0.000  0.000 -22470.14 1.0000000
 
+# 9/16/25 results with 100% HR
+#            Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#4  mean.tre.shr120 3 18228.76      0.000    1.000  0.172 -9111.381 0.1722458
+#5  mean.tre.shr150 3 18229.09      0.324    0.850  0.146 -9111.543 0.3187269
+#7  mean.tre.shr210 3 18229.49      0.727    0.695  0.120 -9111.744 0.4385078
+#6  mean.tre.shr180 3 18229.50      0.734    0.693  0.119 -9111.748 0.5578684
+#10 mean.tre.shr300 3 18229.57      0.808    0.668  0.115 -9111.785 0.6728794
+#8  mean.tre.shr240 3 18229.86      1.094    0.579  0.100 -9111.928 0.7725644
+#3   mean.tre.shr90 3 18229.91      1.146    0.564  0.097 -9111.954 0.8697010
+#9  mean.tre.shr270 3 18229.97      1.210    0.546  0.094 -9111.986 0.9637687
+#2   mean.tre.shr60 3 18232.20      3.433    0.180  0.031 -9113.098 0.9947155
+#1   mean.tre.shr30 3 18235.73      6.968    0.031  0.005 -9114.865 1.0000000
 
 
 impervious_scale_mods <- fit_composition_scale_mods("mean.percent.impervious")
 impervious_scale_mods$aic
-# 9/3/25 results
-#                     Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#2   mean.percent.impervious60 3 43219.96      0.000    1.000  0.997 -21606.98 0.9966108
-#1   mean.percent.impervious30 3 43231.33     11.368    0.003  0.003 -21612.66 1.0000000
-#3   mean.percent.impervious90 3 43295.78     75.817    0.000  0.000 -21644.89 1.0000000
-#4  mean.percent.impervious120 3 43337.45    117.489    0.000  0.000 -21665.72 1.0000000
-#5  mean.percent.impervious150 3 43370.52    150.563    0.000  0.000 -21682.26 1.0000000
-#6  mean.percent.impervious180 3 43394.41    174.455    0.000  0.000 -21694.21 1.0000000
-#7  mean.percent.impervious210 3 43415.61    195.647    0.000  0.000 -21704.80 1.0000000
-#8  mean.percent.impervious240 3 43423.87    203.912    0.000  0.000 -21708.93 1.0000000
-#9  mean.percent.impervious270 3 43433.62    213.666    0.000  0.000 -21713.81 1.0000000
-#10 mean.percent.impervious300 3 43442.52    222.565    0.000  0.000 -21718.26 1.0000000
- 
 
+# 9/16/25 results with 100% HR
+#                      Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#3   mean.percent.impervious90 3 18209.78      0.000    1.000  0.216 -9101.892 0.2163142
+#7  mean.percent.impervious210 3 18210.63      0.847    0.655  0.142 -9102.315 0.3579400
+#6  mean.percent.impervious180 3 18210.67      0.881    0.644  0.139 -9102.332 0.4971599
+#5  mean.percent.impervious150 3 18210.72      0.931    0.628  0.136 -9102.357 0.6329477
+#4  mean.percent.impervious120 3 18210.74      0.959    0.619  0.134 -9102.371 0.7668794
+#8  mean.percent.impervious240 3 18211.54      1.756    0.416  0.090 -9102.770 0.8567952
+#9  mean.percent.impervious270 3 18212.60      2.811    0.245  0.053 -9103.297 0.9098583
+#2   mean.percent.impervious60 3 18212.66      2.878    0.237  0.051 -9103.331 0.9611655
+#10 mean.percent.impervious300 3 18213.72      3.937    0.140  0.030 -9103.860 0.9913809
+#1   mean.percent.impervious30 3 18216.23      6.446    0.040  0.009 -9105.114 1.0000000
