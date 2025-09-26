@@ -16,15 +16,23 @@ source(here("code/helper_data.R"))
 # see A15_segment_landscapemetrics.R for more details on cohesion calculation
 
 
-all_analysis_segments_cohesion_treshr <- readRDS(here("data/all_analysis_segments_cohesion_treshr"))
+all_analysis_segments_cohesion_treshr_full <- readRDS(here("data/all_analysis_segments_cohesion_treshr_full"))
+
+all_analysis_segments_cohesion_treshr_full <- all_analysis_segments_cohesion_treshr_full %>% 
+  data.frame() %>% 
+  select(cohesion, seg.label, buff, forest.threshold, layer, patch.touches.road, year, used.available, crossing.step, naive.rd, crossings.per.naive.rd)
+
 
 # read segment crossing values from A10_combine_analysis_segments.R
 
-all_analysis_segments_by_lion <- readRDS(here("data/all_analysis_segments_by_lion")) %>% 
+all_analysis_segments_by_lion_year <- readRDS(here("data/all_analysis_segments_by_lion_year")) %>% 
   data.frame() %>% 
   select(seg.label, year, used.available, animal.id)
 
-configuration_scale_analysis_df <- full_join(all_analysis_segments_by_lion, all_analysis_segments_cohesion_treshr)
+configuration_scale_analysis_df <- full_join(all_analysis_segments_by_lion_year, all_analysis_segments_cohesion_treshr_full)
+
+configuration_scale_analysis_df <- distinct(configuration_scale_analysis_df)
+
 
 configuration_scale_analysis_df %>% 
   count(seg.label, year, animal.id) %>% 
@@ -37,15 +45,11 @@ configuration_scale_analysis_df %>%
   distinct(seg.label, animal.id) %>% 
   view()
 
-full_join(all_analysis_segments_by_lion, all_analysis_segments_cohesion_treshr) %>% 
-  filter(!is.na(cohesion)) %>% 
-  count(buff, forest.threshold) %>% 
-  arrange(n)
 
 
 
 configuration_scale_analysis_df <- configuration_scale_analysis_df %>% 
-  filter(!is.na(cohesion)) %>% 
+#  filter(!is.na(cohesion)) %>% 
   group_by(seg.label, year, animal.id) %>% 
   mutate(num.rec = n()) %>% 
   ungroup() %>% 
@@ -68,30 +72,6 @@ configuration_scale_analysis_df <- configuration_scale_analysis_df %>%
 #' 
 #'
 #' @examples
-fit_configuration_scale_mods <- function(zconfig) {
-  scales <- c(100, 200, 300)
-  forest.thresholds = c(25, 50, 75)
-  
-  zmods <- lapply(scales, forest.thresholds, function(s, t) {
-    df_scale <- dplyr::filter(configuration_scale_analysis_df, buff == s, forest.threshold == t)
-    glmer(
-      formula = as.formula(paste0(
-        "used.available ~ ", zconfig, "+ (1|animal.id)")),
-      , data = df_scale, family = binomial(link = "logit")
-    )
-  })
-  
-  names(zmods) <- paste(zhab, scales, sep = "")
-  
-  zmods$aic <- aictab(zmods, names(zmods)) %>%
-    data.frame() %>%
-    dplyr::mutate(across(c(AICc, Delta_AICc, ModelLik, AICcWt), \(x) round(x, 3)))
-  
-  return(zmods)
-}
-
-
-
 fit_configuration_scale_mods <- function(zconfig) {
   scales <- c(100, 200, 300)
   forest.thresholds <- c(25, 50, 75)
@@ -124,32 +104,32 @@ fit_configuration_scale_mods <- function(zconfig) {
 
 configuration_scale_mods <- fit_configuration_scale_mods("cohesion")
 configuration_scale_mods$aic
-# 9/3/25 results
-#       Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#3 cohesion_300_25 3 12838.30      0.000    1.000  0.998 -6416.148 0.9979775
-#1 cohesion_100_25 3 12850.93     12.637    0.002  0.002 -6422.466 0.9997762
-#4 cohesion_100_50 3 12856.02     17.720    0.000  0.000 -6425.008 0.9999178
-#2 cohesion_200_25 3 12857.24     18.945    0.000  0.000 -6425.620 0.9999946
-#6 cohesion_300_50 3 12862.56     24.265    0.000  0.000 -6428.280 1.0000000
-#5 cohesion_200_50 3 12882.32     44.023    0.000  0.000 -6438.159 1.0000000
-#7 cohesion_100_75 3 12886.10     47.801    0.000  0.000 -6440.048 1.0000000
-#9 cohesion_300_75 3 12891.92     53.625    0.000  0.000 -6442.960 1.0000000
-#8 cohesion_200_75 3 12898.11     59.816    0.000  0.000 -6446.056 1.0000000
- 
+# 9/16/25 results with 100% HR
+#           Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#5 cohesion_200_50 3 18045.33      0.000        1      1 -9019.665 0.9999957
+#6 cohesion_300_50 3 18070.68     25.352        0      0 -9032.340 0.9999988
+#4 cohesion_100_50 3 18072.61     27.278        0      0 -9033.303 1.0000000
+#1 cohesion_100_25 3 18110.49     65.164        0      0 -9052.247 1.0000000
+#2 cohesion_200_25 3 18126.55     81.215        0      0 -9060.272 1.0000000
+#3 cohesion_300_25 3 18133.48     88.150        0      0 -9063.739 1.0000000
+#9 cohesion_300_75 3 18139.77     94.444        0      0 -9066.886 1.0000000
+#8 cohesion_200_75 3 18154.56    109.232        0      0 -9074.281 1.0000000
+#7 cohesion_100_75 3 18178.94    133.609        0      0 -9086.469 1.0000000
+
 
 
 patchrd_scale_mods <- fit_configuration_scale_mods("patch.touches.road")
 patchrd_scale_mods$aic
-# 9/3/25 results - duplicate models because it's the same patches touching or not touching at different buffer distances for a given forest threshold
-#                   Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
-#4 patch.touches.road_100_50 3 12855.72      0.000        1  0.333 -6424.860 0.3332672
-#5 patch.touches.road_200_50 3 12855.72      0.000        1  0.333 -6424.860 0.6665344
-#6 patch.touches.road_300_50 3 12855.72      0.000        1  0.333 -6424.860 0.9998016
-#1 patch.touches.road_100_25 3 12872.77     17.051        0  0.000 -6433.385 0.9998677
-#2 patch.touches.road_200_25 3 12872.77     17.051        0  0.000 -6433.385 0.9999338
-#3 patch.touches.road_300_25 3 12872.77     17.051        0  0.000 -6433.385 0.9999999
-#7 patch.touches.road_100_75 3 12887.99     32.267        0  0.000 -6440.993 0.9999999
-#8 patch.touches.road_200_75 3 12887.99     32.267        0  0.000 -6440.993 1.0000000
-#9 patch.touches.road_300_75 3 12887.99     32.267        0  0.000 -6440.993 1.0000000
- 
+# duplicate models because it's the same patches touching or not touching at different buffer distances for a given forest threshold
 
+# 9/16/25 results with 100% HR
+#                Modnames K     AICc Delta_AICc ModelLik AICcWt        LL    Cum.Wt
+#1 patch.touches.road_100_25 3 17993.93      0.000        1  0.333 -8993.966 0.3333333
+#2 patch.touches.road_200_25 3 17993.93      0.000        1  0.333 -8993.966 0.6666667
+#3 patch.touches.road_300_25 3 17993.93      0.000        1  0.333 -8993.966 1.0000000
+#4 patch.touches.road_100_50 3 18074.07     80.141        0  0.000 -9034.036 1.0000000
+#5 patch.touches.road_200_50 3 18074.07     80.141        0  0.000 -9034.036 1.0000000
+#6 patch.touches.road_300_50 3 18074.07     80.141        0  0.000 -9034.036 1.0000000
+#7 patch.touches.road_100_75 3 18127.21    133.278        0  0.000 -9060.605 1.0000000
+#8 patch.touches.road_200_75 3 18127.21    133.278        0  0.000 -9060.605 1.0000000
+#9 patch.touches.road_300_75 3 18127.21    133.278        0  0.000 -9060.605 1.0000000
