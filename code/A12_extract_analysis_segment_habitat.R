@@ -73,6 +73,7 @@ system.time(
   all_analysis_segments_mean_tre_shr  <- map2_df(seq(2016, 2023), "tre_shr", get_analysis_segment_mean_habitat)
 ) # 1166 Aug 2025
 # 1679
+#2826
 all_analysis_segments_mean_tre_shr %>% 
   count(seg.label, year) %>% 
   filter(n < 10) %>% 
@@ -143,6 +144,19 @@ all_analysis_segments_mean_tre_shr_full %>%
 saveRDS(all_analysis_segments_mean_tre_shr_full, here("data/all_analysis_segments_mean_tre_shr_full"))
 
 
+# Sep 16, 2025 quick fix
+# today I realized I extracted habitat covariates for all BBMM roads, not just the naive roads, but I only want to analyze the naive roads.
+# I remade here("data/all_analysis_segments") to just be the naive roads and just crossings that crossed the naive roads once
+# but I don't want to re-extract habitat values because that takes many hours of computing
+# so just doing a filtering join witht he new all_analysis_segments as a quick fix
+
+all_analysis_segments_mean_tre_shr_full <- readRDS(here("data/all_analysis_segments_mean_tre_shr_full"))
+
+
+all_analysis_segments_mean_tre_shr_full <- all_analysis_segments_mean_tre_shr_full %>% 
+  right_join(readRDS(here("data/all_analysis_segments")))
+
+saveRDS(all_analysis_segments_mean_tre_shr_full, here("data/all_analysis_segments_mean_tre_shr_full"))
 
 
 
