@@ -1,0 +1,146 @@
+---
+title: "MS model selection tables"
+output: word_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      error = FALSE)
+```
+
+
+```{r}
+library(tidyverse)
+library(here)
+library(officer)
+library(flextable)
+library(AICcmodavg)
+library(lme4)
+```
+
+
+
+```{r}
+
+
+crossing_models <- readRDS(here("model_objects/crossing_models"))
+
+round2_crossing_models <- readRDS(here("model_objects/round2_crossing_models"))
+
+
+output_models = list("r1_cohesion_patchrd_tre.shr_impervious_bridge.binary_class_sex_age" = crossing_models$cohesion_patchrd_tre.shr_impervious_bridge.binary_class_sex_age,
+                    "r1_cohesion_patchrd_tre.shr_bridge.binary_class_sex_age" =  crossing_models$cohesion_patchrd_tre.shr_bridge.binary_class_sex_age,
+                    "r2_cohesion2_patchrd_tre.shr2_impervious2_bridge.binary_class_sex_age" =  round2_crossing_models$cohesion2_patchrd_tre.shr2_impervious2_bridge.binary_class_sex_age,
+                    "r2_cohesion_patchrd_tre.shr_impervious_bridge.binary_class_sex" =  round2_crossing_models$cohesion_patchrd_tre.shr_impervious_bridge.binary_class_sex,
+                    "r2_cohesion_patchrd_tre.shr_impervious_bridge.binary_class_age" =  round2_crossing_models$cohesion_patchrd_tre.shr_impervious_bridge.binary_class_age)
+
+output_models_aic <- aictab(output_models, names(output_models))
+
+output_models_aic_out <- output_models_aic %>%
+  mutate(which.round = case_when(str_detect(Modnames, "r1_") ~ "a priori",
+                                 str_detect(Modnames, "r2_") ~ "round 2")) %>% 
+  mutate(Modnames = str_replace(Modnames, "r1_|r2_", ""),
+         Modnames = str_replace_all(Modnames, "_", " + "),
+         Modnames = str_replace(Modnames, "cohesion", "Cohesion"),
+         Modnames = str_replace(Modnames, "patchrd", "CrossWoody"),
+         Modnames = str_replace(Modnames, "tre.shr", "% Woody"),
+         Modnames = str_replace(Modnames, "impervious", "% Impervious"),
+         Modnames = str_replace(Modnames, "bridge.binary", "Bridge/culvert"),
+         Modnames = str_replace(Modnames, "class", "Class"),
+         Modnames = str_replace(Modnames, "sex", "Sex"),
+         Modnames = str_replace(Modnames, "age", "Age"),
+         Modnames = str_replace_all(Modnames, "2", "²")) %>% 
+  mutate(across(c(AICc, Delta_AICc, LL, AICcWt), ~round(., 3)))  
+
+
+
+output_models_aic_out %>% 
+  select(which.round, Modnames, K, AICc, Delta_AICc, LL) %>% 
+  flextable() %>% 
+  set_header_labels(which.round = "Which modeling round",
+                    Modnames = "Fixed structure",
+                    Delta_AICc = "\u0394 AICc",
+                    LL = "log(Lik)") %>% 
+  autofit() %>% 
+  fit_to_width(max_width = 7)
+
+
+```
+  
+  
+  
+\pagebreak  
+    
+```{r}
+fixed_effects_coefs <- map_df(output_models, ~ {
+  coefs <- fixef(.x)
+  ses <- sqrt(diag(vcov(.x)))
+  
+  tibble(
+    term = names(coefs),
+    estimate = coefs,
+    std_error = ses
+  )
+}, .id = "model")
+
+
+fixed_effects_boot_ci <- bind_rows(readRDS(here("model_objects/boot_coef_ci_1000sim_cohesion_patchrd_treshr_bridgebinary_class_sex_age")) %>% 
+                                mutate(model = "r1_cohesion_patchrd_tre.shr_bridge.binary_class_sex_age"),
+                              readRDS(here("model_objects/boot_coef_ci_1000sim_cohesion_patchrd_treshr_impervious_bridge_class_sex_age")) %>% 
+                                mutate(model = "r1_cohesion_patchrd_tre.shr_impervious_bridge.binary_class_sex_age"),
+                              readRDS(here("model_objects/boot_coef_ci_1000sim_cohesion_patchrd_treshr_impervious_bridgebinary_class_age")) %>% 
+                                mutate(model = "r2_cohesion_patchrd_tre.shr_impervious_bridge.binary_class_age"),
+                              readRDS(here("model_objects/boot_coef_ci_1000sim_cohesion_patchrd_treshr_impervious_bridgebinary_class_sex")) %>% 
+                                mutate(model = "r2_cohesion_patchrd_tre.shr_impervious_bridge.binary_class_sex"),
+                              readRDS(here("model_objects/boot_coef_ci_1000sim_cohesion2_patchrd_treshr2_impervious2_bridgebinary_class_sex_age")) %>% 
+                                mutate(model = "r2_cohesion2_patchrd_tre.shr2_impervious2_bridge.binary_class_sex_age"))
+
+
+
+fixed_effects_df_clean <- full_join(fixed_effects_boot_ci, fixed_effects_coefs) %>% 
+  filter(term != "(Intercept)")
+
+
+fixed_effects_df_clean <- fixed_effects_df_clean %>%
+  mutate(which.round = case_when(str_detect(model, "r1_") ~ "a priori",
+                                 str_detect(model, "r2_") ~ "round 2")) %>% 
+  mutate(term = str_replace_all(term, "_", " + "),
+         term = str_replace_all(term, "poly\\(", ""),
+         term = str_replace_all(term, ", 2\\)1", ""),
+         term = str_replace_all(term, ", 2\\)", ""),
+         term = str_replace_all(term, "TRUE", ""),
+         term = str_replace(term, "cohesion", "Cohesion"),
+         term = str_replace(term, "cohesion", "Cohesion"),
+         term = str_replace(term, "patchrd", "CrossWoody"),
+         term = str_replace(term, "tre.shr", "% Woody"),
+         term = str_replace(term, "impervious", "% Impervious"),
+         term = str_replace(term, "bridge.binary", "Bridge/culvert"),
+         term = str_replace(term, "class", "Class-"),
+         term = str_replace(term, "sexM", "Sex-Male"),
+         term = str_replace(term, "agesub-adult", "Age-Sub adult"),
+         term = str_replace_all(term, "2", "²")
+         )
+
+fixed_effects_df_clean <- fixed_effects_df_clean %>% 
+  mutate(across(c(estimate, std_error, lower, upper), ~round(.,1))) %>% 
+  mutate(out.val = paste(estimate, "\n(", lower, ", ", upper, ")", sep = ""))
+
+
+fixed_effects_df_wide <- fixed_effects_df_clean %>% 
+  pivot_wider(id_cols = c(model, which.round), names_from = term, values_from = out.val) %>% 
+  select("which.round", "model", "Cohesion", "Cohesion²", "CrossWoody", "% Woody", "% Woody²", "% Impervious", "% Impervious²", "Bridge/culvert", "Class-Collector", "Class-Arterial", "Class-Highway", "Sex-Male", "Age-Sub adult", "% Impervious²") %>% 
+  full_join(output_models_aic %>% select(model = Modnames, Delta_AICc)) %>% 
+  arrange(Delta_AICc)
+
+fixed_effects_df_wide %>% 
+  select("Which modeling round" = which.round, "Cohesion", "Cohesion²", "CrossWoody", "% Woody", "% Woody²", "% Impervious", "% Impervious²", "Bridge/culvert", "Class-Collector", "Class-Arterial", "Class-Highway", "Sex-Male", "Age-Sub adult", "% Impervious²") %>% 
+  flextable() %>% 
+ # autofit() %>% 
+  fit_to_width(max_width = 7)
+  
+
+
+```

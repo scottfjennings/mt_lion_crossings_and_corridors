@@ -1,0 +1,507 @@
+---
+title: "Plotting model predictions"
+output: word_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      error = FALSE)
+```
+
+
+```{r}
+library(tidyverse)
+library(here)
+library(officer)
+library(flextable)
+```
+
+
+```{r}
+
+# bootstrapped confidence intervals for model coeficients and predictions are in model_objects
+
+
+
+analysis_table <- readRDS(here("data/analysis_table_complete")) %>% 
+  ungroup() %>%
+  mutate(used.available = ifelse(used.available == 0, "available", "used"),
+         used.available = factor(used.available),
+         sex = ifelse(sex == "F", "Female", "Male")) 
+
+
+
+analysis_table_complete <- analysis_table %>% 
+  mutate(cohesion = scale(cohesion)[,1],
+         impervious = scale(impervious)[,1],
+         tre.shr = scale(tre.shr)[,1])
+
+model_predictions <- bind_rows(readRDS(here("model_objects/boot_pred_ci_1000sim_cohesion_patchrd_treshr_impervious_bridgebinary_class_sex_age")) %>% 
+                                 mutate(Modnames = "r1_cohesion_patchrd_tre.shr_impervious_bridge.binary_class_sex_age"),
+                               readRDS(here("model_objects/boot_pred_ci_1000sim_cohesion2_patchrd_treshr2_impervious2_bridgebinary_class_sex_age")) %>% 
+                                 mutate(Modnames = "r2_cohesion2_patchrd_tre.shr2_impervious2_bridge.binary_class_sex_age"))
+
+model_predictions <- model_predictions  %>%
+  mutate(which.round = case_when(str_detect(Modnames, "r1_") ~ "a priori",
+                                 str_detect(Modnames, "r2_") ~ "round 2")) %>% 
+  mutate(Modnames = str_replace(Modnames, "r1_|r2_", ""),
+         Modnames = str_replace_all(Modnames, "_", " + "),
+         Modnames = str_replace(Modnames, "cohesion", "Cohesion"),
+         Modnames = str_replace(Modnames, "patchrd", "CrossWoody"),
+         Modnames = str_replace(Modnames, "tre.shr", "% Woody"),
+         Modnames = str_replace(Modnames, "impervious", "% Impervious"),
+         Modnames = str_replace(Modnames, "bridge.binary", "Bridge/culvert"),
+         Modnames = str_replace(Modnames, "class", "Class"),
+         Modnames = str_replace(Modnames, "sex", "Sex"),
+         Modnames = str_replace(Modnames, "age", "Age"),
+         Modnames = str_replace_all(Modnames, "2", "²")) %>% 
+  mutate(sex = ifelse(sex == "F", "Female", "Male"))
+  
+available_locs_predicted_crossing_prob <- readRDS(here("model_objects/available_locs_predicted_crossing_prob"))
+
+available_locs_predicted_crossing_prob <- available_locs_predicted_crossing_prob %>% 
+  mutate(sex = ifelse(sex == "F", "Female", "Male"))
+
+```
+
+
+
+
+```{r fig.height=8, fig.width=7, eval=FALSE}
+
+# sex and age
+
+mod_plot_sex_age = model_predictions %>%
+  filter(patchrd == 0, 
+         bridge.binary == 0, 
+         class == "Local", 
+         cohesion.orig == mean(analysis_table$cohesion), 
+         tre.shr.orig == mean(analysis_table$tre.shr),
+         impervious.orig == mean(analysis_table$impervious)) %>% 
+  ggplot() +
+  geom_point(aes(y = prediction, x = sex, color = Modnames), size = 3, position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower, ymax = upper, x = sex, color = Modnames), linewidth = 2, position = position_dodge(width = 0.5), width = 0.25) +
+  labs(x = "",
+       y = "Relative\nprobability of crossing",
+       color = "",
+       fill = "",
+       title = "Raw used and available") +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_bw()   +
+  theme(#legend.position = "top", legend.direction = "vertical",
+         legend.position = c(0.05, 0.99),   # inside top-right
+    legend.justification = c("left", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank()) +
+  ylim(0, 0.55)  +
+  facet_wrap(~age)
+
+
+  
+raw_plot_sex_age = analysis_table %>% 
+  group_by(age, sex, used.available) %>% 
+  summarise(group.ua = n()) %>% 
+  ungroup() %>% 
+  group_by(used.available) %>% 
+  mutate(total.ua = sum(group.ua),
+         ua.proportion = group.ua/total.ua) %>% 
+  ggplot() +
+  geom_col(aes(x = sex, y = ua.proportion, fill = as.factor(used.available)), width = 0.4, position = position_dodge(width = 0.5)) +
+  labs(x = "Sex",
+       y = "Proportion of\nroad segments",
+       fill = "") +
+  scale_fill_brewer(palette = "Set1") +
+  theme_bw()   +
+  theme(
+    legend.position = c(0.8, 0.9),   # inside top-right
+    legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank() # makes sure no space for title
+  )  +
+  facet_wrap(~age)
+
+cowplot::plot_grid(mod_plot_sex_age, raw_plot_sex_age, ncol = 1, 
+                   rel_heights = c(0.6, 0.4),
+                   align = "v",      # align vertically
+                   axis = "lr"       # align left & right edges
+                   )
+
+```
+
+
+```{r fig.height=8, fig.width=7}
+
+# road class
+
+
+raw_plot_class = analysis_table %>% 
+  group_by(class, sex, used.available) %>% 
+  summarise(group.ua = n()) %>% 
+  ungroup() %>% 
+  group_by(sex, used.available) %>% 
+  mutate(total.ua = sum(group.ua),
+         ua.proportion = group.ua/total.ua) %>% 
+  ggplot() +
+  geom_col(aes(x = class, y = ua.proportion, fill = as.factor(used.available)), width = 0.4, position = position_dodge(width = 0.5)) +
+  labs(x = "",
+       y = "Proportion of\nroad segments",
+       fill = "",
+       title = "Raw used and available") +
+  scale_fill_brewer(palette = "Set1") +
+  theme_bw()   +
+  theme(
+    #legend.position = c(0.9, 0.9),   # inside top-right
+    #legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank() # makes sure no space for title
+  ) +
+  facet_wrap(~sex)
+
+mod_plot_class = model_predictions %>%
+  filter(age == "adult", 
+         patchrd == 0, 
+         bridge.binary == 0, 
+         cohesion.orig == mean(analysis_table$cohesion), 
+         tre.shr.orig == mean(analysis_table$tre.shr),
+         impervious.orig == mean(analysis_table$impervious),
+         which.round == "round 2") %>% 
+  ggplot() +
+  geom_point(aes(y = prediction, x = class, color = sex), size = 4, position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower, ymax = upper, x = class, color = sex), linewidth = 2, position = position_dodge(width = 0.5), width = 0.25) +
+  labs(x = "",
+       y = "Relative\nprobability of crossing",
+       color = "",
+       fill = "",
+       title = "Modelled preference") +
+#  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_bw()   +
+  theme(#legend.position = "top", legend.direction = "vertical",
+         #legend.position = c(0.9, 0.99),   # inside top-right
+    #legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank()) #+
+  #ylim(0, 0.6)
+
+sex_class_integrated_probs <- available_locs_predicted_crossing_prob %>% 
+  group_by(sex, class, used.available) %>% 
+  summarise(integrated.prob = sum(predicted.crossing.prob)) %>% 
+  ungroup()
+
+sex_class_integrated_probs <- sex_class_integrated_probs %>% 
+  mutate(ref.integrated.prob = ifelse(sex == "Female", filter(sex_class_integrated_probs, sex == "Female", class == "Local") %>% pull(integrated.prob), filter(sex_class_integrated_probs, sex == "Male", class == "Local") %>% pull(integrated.prob)),
+    integrated.relative.use = integrated.prob/ref.integrated.prob)
+
+integrated_prob_plot <- sex_class_integrated_probs %>% 
+ # filter(class != "Local") %>% 
+  ggplot(aes(x = class, y = integrated.relative.use, color = sex, group = sex)) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  geom_point(size = 3, position = position_dodge(width = 0.25)) +
+  geom_linerange(aes(ymin = 1, ymax = integrated.relative.use), linewidth = 2, position = position_dodge(width = 0.25)) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(y = "Integrated relative\nprobability of crossing",
+       x = "Road class",
+       title = "Estimated true use") +
+  theme_bw()   +
+  theme(#legend.position = "top", legend.direction = "vertical",
+    #     legend.position = c(0.9, 0.99),   # inside top-right
+    #legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank()) #+
+  #ylim(0, 1.6)
+
+cowplot::plot_grid(raw_plot_class, mod_plot_class, integrated_prob_plot, ncol = 1, 
+                   rel_heights = c(0.33, 0.33, 0.33),
+                   align = "v",      # align vertically
+                   axis = "lr"       # align left & right edges
+                   )
+
+
+
+  
+```
+
+
+
+```{r fig.height=8, fig.width=7, eval=FALSE}
+
+# patchrd
+
+mod_plot_patchrd = model_predictions %>%
+  filter(age == "adult", 
+         #sex == "F", 
+         bridge.binary == 0, 
+         class == "Local", 
+         cohesion.orig == mean(analysis_table$cohesion), 
+         tre.shr.orig == mean(analysis_table$tre.shr),
+         impervious.orig == mean(analysis_table$impervious)) %>% 
+  ggplot() +
+  geom_point(aes(y = prediction, x = patchrd, color = Modnames), size = 4, position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower, ymax = upper, x = patchrd, color = Modnames), linewidth = 2, position = position_dodge(width = 0.5), width = 0.25) +
+  labs(x = "",
+       y = "Relative\nprobability of crossing",
+       color = "",
+       fill = "") +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_bw()   +
+  theme(#legend.position = "top", legend.direction = "vertical",
+         legend.position = c(0.05, 0.99),   # inside top-right
+    legend.justification = c("left", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank()) +
+  ylim(0, 0.75) +
+  facet_wrap(~sex)
+
+
+  
+raw_plot_patchrd = analysis_table %>% 
+  ggplot() +
+  geom_bar(aes(x = patchrd, fill = as.factor(used.available))) +
+  labs(x = "Road crosses woody vegetation",
+       y = "Number of\nroad segments",
+       fill = "") +
+  scale_fill_brewer(palette = "Set1") +
+  theme_bw()   +
+  theme(
+    legend.position = c(0.2, 0.9),   # inside top-right
+    legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank() # makes sure no space for title
+  ) +
+  facet_wrap(~sex)
+
+cowplot::plot_grid(mod_plot_patchrd, raw_plot_patchrd, ncol = 1, 
+                   rel_heights = c(0.6, 0.4),
+                   align = "v",      # align vertically
+                   axis = "lr"       # align left & right edges
+                   )
+
+```
+
+```{r fig.height=8, fig.width=7, eval=FALSE}
+
+# bridge.binary
+
+mod_plot_bridge = model_predictions %>%
+  filter(age == "adult", 
+         patchrd == 0, 
+         class == "Local", 
+         cohesion.orig == mean(analysis_table$cohesion), 
+         tre.shr.orig == mean(analysis_table$tre.shr),
+         impervious.orig == mean(analysis_table$impervious)) %>%
+  ggplot() +
+  geom_point(aes(y = prediction, x = as.logical(bridge.binary), color = Modnames), size = 4, position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower, ymax = upper, x = as.logical(bridge.binary), color = Modnames), linewidth = 2, position = position_dodge(width = 0.5), width = 0.25) +
+  labs(x = "",
+       y = "Relative\nprobability of crossing",
+       color = "",
+       fill = "") +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_bw()   +
+  theme(#legend.position = "top", legend.direction = "vertical",
+         legend.position = c(0.05, 0.99),   # inside top-right
+    legend.justification = c("left", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank()) +
+  ylim(0, 0.9) +
+  facet_wrap(~sex)
+
+
+  
+raw_plot_bridge = analysis_table %>% 
+  ggplot() +
+  geom_bar(aes(x = as.logical(bridge.binary), fill = as.factor(used.available))) +
+  labs(x = "Road has at least 1 bridge",
+       y = "Number of\nroad segments",
+       fill = "") +
+  scale_fill_brewer(palette = "Set1") +
+  theme_bw()   +
+  theme(
+    legend.position = c(0.45, 0.9),   # inside top-right
+    legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank() # makes sure no space for title
+  ) +
+  facet_wrap(~sex)
+
+cowplot::plot_grid(mod_plot_bridge, raw_plot_bridge, ncol = 1, 
+                   rel_heights = c(0.6, 0.4),
+                   align = "v",      # align vertically
+                   axis = "lr"       # align left & right edges
+                   )
+
+```
+
+
+
+```{r fig.height=8, fig.width=7, eval=FALSE}
+
+# cohesion
+
+mod_plot_cohesion = model_predictions %>%
+  filter(patchrd == 0, 
+         bridge.binary == 0, 
+         class == "Local", 
+         age == "adult", 
+         tre.shr.orig == mean(analysis_table$tre.shr),
+         impervious.orig == mean(analysis_table$impervious)) %>%
+  ggplot() +
+  geom_line(aes(y = prediction, x = cohesion.orig, color = Modnames), size = 3) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, x = cohesion.orig, fill = Modnames), alpha = 0.3) +
+  labs(x = "",
+       y = "Relative\nprobability of crossing",
+       color = "",
+       fill = "") +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_bw()   +
+  theme(#legend.position = "top", legend.direction = "vertical",
+         legend.position = c(0.05, 0.99),   # inside top-right
+    legend.justification = c("left", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank()) +
+  ylim(0, 0.75) +
+  facet_wrap(~sex)
+
+
+  
+raw_plot_cohesion = analysis_table %>% 
+  ggplot() +
+  stat_density(aes(x = cohesion, color = as.factor(used.available)), fill = NA, linewidth = 2, geom = "line") +
+  labs(x = "Cohesion",
+       y = "Density of\nroad segments",
+       color = "") +
+  scale_color_brewer(palette = "Set1") +
+  theme_bw()   +
+  theme(
+    legend.position = c(0.3, 0.9),   # inside top-right
+    legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank() # makes sure no space for title
+  ) +
+  facet_wrap(~sex)
+
+cowplot::plot_grid(mod_plot_cohesion, raw_plot_cohesion, ncol = 1, 
+                   rel_heights = c(0.6, 0.4),
+                   align = "v",      # align vertically
+                   axis = "lr"       # align left & right edges
+                   )
+
+```
+
+
+```{r fig.height=8, fig.width=7, eval=FALSE}
+
+# woody veg
+
+mod_plot_woody = model_predictions %>%
+  filter(patchrd == 0, 
+         bridge.binary == 0, 
+         class == "Local", 
+         age == "adult", 
+         cohesion.orig == mean(analysis_table$cohesion), 
+         impervious.orig == mean(analysis_table$impervious)) %>% 
+  ggplot() +
+  geom_line(aes(y = prediction, x = tre.shr.orig, color = Modnames), size = 3) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, x = tre.shr.orig, fill = Modnames), alpha = 0.3) +
+  labs(x = "",
+       y = "Relative\nprobability of crossing",
+       color = "",
+       fill = "") +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_bw()   +
+  theme(#legend.position = "top", legend.direction = "vertical",
+         legend.position = c(0.99, 0.99),   # inside top-right
+    legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank()) +
+  ylim(0, 0.75) +
+  facet_wrap(~sex)
+
+
+  
+raw_plot_woody = analysis_table %>% 
+  ggplot() +
+  stat_density(aes(x = tre.shr, color = as.factor(used.available)), fill = NA, linewidth = 2, geom = "line") +
+  labs(x = "% cover woody vegetation",
+       y = "Density of\nroad segments",
+       color = "") +
+  scale_color_brewer(palette = "Set1") +
+  theme_bw()   +
+  theme(
+    legend.position = c(0.9, 0.9),   # inside top-right
+    legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank() # makes sure no space for title
+  ) +
+  facet_wrap(~sex)
+
+cowplot::plot_grid(mod_plot_woody, raw_plot_woody, ncol = 1, 
+                   rel_heights = c(0.6, 0.4),
+                   align = "v",      # align vertically
+                   axis = "lr"       # align left & right edges
+                   )
+
+```
+
+
+
+```{r fig.height=8, fig.width=7, eval=FALSE}
+
+# impervious
+
+mod_plot_impervious = model_predictions %>%
+  filter(patchrd == 0, 
+         bridge.binary == 0, 
+         class == "Local", 
+         age == "adult", 
+         cohesion.orig == mean(analysis_table$cohesion), 
+         tre.shr.orig == mean(analysis_table$tre.shr)) %>% 
+  ggplot() +
+  geom_line(aes(y = prediction, x = impervious.orig, color = Modnames), size = 3) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, x = impervious.orig, fill = Modnames), alpha = 0.3) +
+  labs(x = "",
+       y = "Relative\nprobability of crossing",
+       color = "",
+       fill = "") +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_bw()   +
+  theme(#legend.position = "top", legend.direction = "vertical",
+         legend.position = c(0.05, 0.95),   # inside top-right
+    legend.justification = c("left", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank()) +
+  ylim(0, 0.7) +
+  facet_wrap(~sex)
+
+
+  
+raw_plot_impervious = analysis_table %>% 
+  ggplot() +
+  stat_density(aes(x = impervious, color = as.factor(used.available)), fill = NA, linewidth = 2, geom = "line") +
+  labs(x = "% cover impervious surfaces",
+       y = "Density of\nroad segments",
+       color = "") +
+  scale_color_brewer(palette = "Set1") +
+  theme_bw()   +
+  theme(
+    legend.position = c(0.9, 0.9),   # inside top-right
+    legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "black"), # box with border
+    legend.title = element_blank() # makes sure no space for title
+  ) +
+  facet_wrap(~sex)
+
+cowplot::plot_grid(mod_plot_impervious, raw_plot_impervious, ncol = 1, 
+                   rel_heights = c(0.6, 0.4)
+                   )
+
+```
