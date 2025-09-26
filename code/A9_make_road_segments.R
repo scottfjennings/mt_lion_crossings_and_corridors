@@ -203,54 +203,84 @@ seg_labels_road_class <- readRDS(here("data/seg_labels_road_class"))
 
 
 # filter segments to homeranges and classify each segment as being in the appropriate home range ----
-
+# need segments properly IDed to the specific lion-year homerange, and to the combined homerange polygon of all lions in all years
 
 napa_sonoma_rds_equal_segs <- readRDS(here("data/napa_sonoma_rds_equal_segs")) %>% 
   bind_rows(.id = "label") %>% 
   st_as_sf() 
 
-# individual lion homeranges ----
-puma_homeranges <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs_99_sonoma_napa")) %>% 
+# individual lion year 99% homeranges ----
+puma_year_homeranges_99 <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_lion_year_hrs_99_sonoma_napa")) %>% 
   filter(iso_level == 0.99) %>% 
   rename(animal.id = ID) %>% 
-  filter(!animal.id %in% c("P21", "P30", "P34"))
+  filter(!animal.id %in% c("P21", "P30", "P34")) %>% 
+  st_as_sf() %>% 
+  st_transform(crs = 26910)
 # Ensure coordinate reference systems match
-napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(puma_homeranges))
+napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(puma_year_homeranges_99))
+
 
 # Spatial join: assign each road segment to overlapping home range
-segments_in_homeranges <- st_intersection(napa_sonoma_rds_equal_segs, puma_homeranges) %>% 
-  select(animal.id, seg.label, seg.length, all.in.sonoma.napa, geometry)
+system.time(
+  segments_in_lion_year_homeranges_99 <- st_intersection(napa_sonoma_rds_equal_segs, puma_year_homeranges_99)
+)
 
-# Optional: filter out segments not within any homerange
-segments_in_homeranges <- segments_in_homeranges %>% filter(!is.na(animal.id))
+segments_in_lion_year_homeranges_99 <- segments_in_lion_year_homeranges_99 %>% 
+  select(animal.id, year, seg.label, seg.length, geometry)
 
-# checking
-segments_in_homeranges %>% 
-  data.frame() %>% 
-  select(-geometry) %>% 
-  group_by(seg.label) %>% 
-  summarise(pumas = paste(animal.id, collapse = "; "),
-            npuma = n()) %>%
-  view()
+saveRDS(segments_in_lion_year_homeranges_99, here("data/segments_in_lion_year_homeranges_99"))
 
-saveRDS(segments_in_homeranges, here("data/segments_in_puma_homeranges"))
 
-# all lions combined homerange polygon ----
-#combined_puma_homeranges <- readRDS(here("model_objects/a_LoCoH home ranges/aLoCoH_hrs_99_combined_sonoma_napa"))
+# individual lion year 100% homeranges ----
+puma_year_homeranges_100 <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_lion_year_hrs_100_sonoma_napa")) %>% 
+  filter(iso_level == 1.0) %>% 
+  rename(animal.id = ID) %>% 
+  filter(!animal.id %in% c("P21", "P30", "P34")) %>% 
+  st_as_sf() %>% 
+  st_transform(crs = 26910)
+# Ensure coordinate reference systems match
+napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(puma_year_homeranges_100))
 
-combined_puma_homeranges <- puma_homeranges %>% 
+
+# Spatial join: assign each road segment to overlapping home range
+system.time(
+  segments_in_lion_year_homeranges_100 <- st_intersection(napa_sonoma_rds_equal_segs, puma_year_homeranges_100)
+)
+
+system.time(
+segments_in_lion_year_homeranges_100 <- st_join(
+  napa_sonoma_rds_equal_segs,
+  puma_year_homeranges_100,
+  join = st_within
+)
+)
+segments_in_lion_year_homeranges_100 <- segments_in_lion_year_homeranges_100 %>% 
+  select(animal.id, year, seg.label, seg.length, geometry)
+
+saveRDS(segments_in_lion_year_homeranges_100, here("data/segments_in_lion_year_homeranges_100"))
+
+segments_in_lion_year_homeranges_100 <- readRDS(here("data/segments_in_lion_year_homeranges_100"))
+
+
+ggplot() +
+  geom_sf(data = filter(puma_year_homeranges_100, year == 2020)) +
+  geom_sf(data = filter(segments_in_lion_year_homeranges_100, seg.label == "3rd Ave_Napa_1_7"), color = "red", linewidth = 10)
+
+
+# all lions combined 99% homerange polygon ----
+
+combined_homeranges_99 <- puma_year_homeranges_99 %>% 
+  ungroup() %>% 
   summarise()
-  
-
 
 # Ensure coordinate reference systems match
-napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(combined_puma_homeranges))
+napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(combined_homeranges_99))
 
 # Spatial join: assign each road segment to overlapping home range
 # st_intersects to retain segments partially within the homeranges
 # st_within retains segments that are totally within homeranges
 # for the combined homerange polygon it doesn't make a difference
-segments_in_combined_homeranges <- st_intersection(napa_sonoma_rds_equal_segs, combined_puma_homeranges) %>% 
+segments_in_combined_homeranges_99 <- st_intersection(napa_sonoma_rds_equal_segs, combined_homeranges_99) %>% 
   select(, seg.label, seg.length, geometry)
 
 ggplot() +
@@ -273,75 +303,42 @@ segments_in_combined_homeranges %>%
   count(seg.label) %>%
   view()
 
-saveRDS(segments_in_combined_homeranges, here("data/segments_in_combined_homeranges"))
+saveRDS(segments_in_combined_homeranges_99, here("data/segments_in_combined_homeranges_99"))
+
+# now for 100% HR ----
+
+combined_homeranges_100 <- puma_year_homeranges_100 %>% 
+  ungroup() %>% 
+  summarise()
+
+# Ensure coordinate reference systems match
+napa_sonoma_rds_equal_segs <- st_transform(napa_sonoma_rds_equal_segs, st_crs(combined_homeranges_100))
+
+# Spatial join: assign each road segment to overlapping home range
+# st_intersects to retain segments partially within the homeranges
+# st_within retains segments that are totally within homeranges
+# for the combined homerange polygon it doesn't make a difference
+segments_in_combined_homeranges_100 <- st_intersection(napa_sonoma_rds_equal_segs, combined_homeranges_100) %>% 
+  select(, seg.label, seg.length, geometry)
+
+ggplot() +
+  geom_sf(data = combined_homeranges_100) +
+  geom_sf(data = puma_year_homeranges_100, aes(color = animal.id), fill = NA) +
+  geom_sf(data = segments_in_combined_homeranges_100)
 
 
-# 9/2/25 NO RUN. calculating distances between all segments, by region ----
+# checking
+# there should be a perfect match between segments in the individual lion and lions combined home ranges
+# if not doulde check which lions are in the combined
+segments_in_combined_homeranges_100 %>% data.frame() %>% distinct(seg.label) %>% mutate(in.combined = TRUE) %>% 
+  full_join(segments_in_lion_year_homeranges_100 %>% data.frame() %>% distinct(seg.label) %>% mutate(in.individual = TRUE)) %>% 
+  filter(in.combined != in.individual)
 
-seg_midpoints <- readRDS(here("data/seg_midpoints")) %>% 
-  st_as_sf()
 
-
-segments_in_combined_homeranges <- readRDS(here("data/segments_in_combined_homeranges"))
-
-
-seg_regions <- readRDS(here("data/hr_segments_prop_in_developed")) %>% 
+segments_in_combined_homeranges_100 %>% 
   data.frame() %>% 
-  select(-geometry, -seg.length)   %>% 
-  filter(animal.id %in% analysis_pumas,
-         !animal.id %in% few_crossings_pumas,
-         !animal.id %in% hr_exclude_pumas,
-         !seg.label %in% p31_exclude_segments) %>% 
-  mutate(region = ifelse(animal.id %in% c("P31", "P39"), 1, 2)) %>% 
-  distinct(seg.label, region)
+  select(-geometry) %>% 
+  count(seg.label) %>%
+  view()
 
-hr_seg_midpoints <- segments_in_combined_homeranges %>% 
-  data.frame() %>% 
-  select(seg.label) %>% 
-  left_join(seg_midpoints) %>% 
-  st_as_sf()
-
-
-seg_distances <- st_distance(hr_seg_midpoints)
-
-seg_distances_df <- data.frame(seg_distances)
-
-# Ensure seg.label is preserved as row and column identifiers
-seg_labels <- hr_seg_midpoints$seg.label
-
-seg_distances_long <- as.data.frame(as.table(as.matrix(seg_distances))) %>%
-  rename(row = Var1, col = Var2, distance = Freq) %>%
-  mutate(
-    row = as.integer(row),
-    col = as.integer(col),
-    row_label = seg_labels[row],
-    col_label = seg_labels[col]
-  ) %>%
-  filter(row < col) %>%
-  select(seg1 = row_label, seg2 = col_label, distance)
-
-
-# Join region info for seg1 and seg2
-seg_distances_with_regions <- seg_distances_long %>%
-  left_join(seg_regions, by = c("seg1" = "seg.label")) %>%
-  rename(region1 = region) %>%
-  left_join(seg_regions, by = c("seg2" = "seg.label")) %>%
-  rename(region2 = region) %>%
-  filter(region1 == region2) %>%
-  rename(region = region1) %>% 
-  select(-region2)
-
-
-# Summarize by region
-seg_distances_with_regions %>%
-  #group_by(region) %>%
-  summarise(
-    n_pairs = n(),
-    mean_distance = mean(distance),
-    median_distance = median(distance),
-    min_distance = min(distance),
-    max_distance = max(distance),
-    sd_distance = sd(distance),
-    .groups = "drop"
-  )
-
+saveRDS(segments_in_combined_homeranges_99, here("data/segments_in_combined_homeranges_100"))
