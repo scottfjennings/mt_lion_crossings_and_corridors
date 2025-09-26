@@ -62,6 +62,11 @@ p1_family_proximity <- bind_rows(puma_proximity("P1", "P2"),
 
 write.csv(p1_family_proximity, here("data/p1_family_proximity.csv"), row.names = FALSE)
 
+p1_family_proximity <- read.csv(here("data/p1_family_proximity.csv"))
+
+p1_family_proximity <- p1_family_proximity %>% 
+  mutate(date.local = as.Date(date.local))
+
 p1_family_proximity %>%  
   ggplot() +
   geom_line(aes(x = date.local, y = dist, color = cat2.id)) +
