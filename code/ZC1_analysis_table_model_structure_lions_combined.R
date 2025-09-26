@@ -15,130 +15,163 @@ library(readxl)
 
 source(here("code/helper_data.R"))
 
+# used and available road segments ----
+all_analysis_segments_by_lion_year <- readRDS(here("data/all_analysis_segments_by_lion_year"))
 
-# lion sex ----
-puma_sexes <- read_xlsx("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/COLLAR DATE INFO_31Dec2023.xlsx")
-
-names(puma_sexes) <- tolower(names(puma_sexes))
-
-puma_sexes <- puma_sexes %>%
-  rename("animal.id" = `animal id`) %>% 
-  distinct(animal.id, sex)   %>% 
-  filter(animal.id %in% analysis_pumas,
-         !animal.id %in% few_crossings_pumas,
-         !animal.id %in% hr_exclude_pumas) 
-
-
-# full lion year month segment for just segmenst outside continuous development. this used to double check all the right segments move forward to the main analysis ----
-analysis_lion_year_month_seg <- readRDS(here("data/full_lion_year_month_seg")) %>% 
-  full_join(readRDS(here("data/hr_segments_prop_in_developed"))) %>% 
-  data.frame() %>%  
-  filter(prop.seg.in.dev50 == 0) %>% 
-  select(animal.id, seg.label, year, month) %>% 
-  filter(animal.id %in% analysis_pumas,
-         !animal.id %in% few_crossings_pumas,
-         !animal.id %in% hr_exclude_pumas,
-         !seg.label %in% p31_exclude_segments)
-  
-
-# full lion year segment for just segments outside continuous development. this used to double check all the right segments move forward to the main analysis ----
-analysis_lion_year_seg <- readRDS(here("data/full_lion_year_month_seg")) %>% 
-  group_by(animal.id, year, seg.label) %>% 
-  summarise(num.months = n()) %>% 
-  full_join(readRDS(here("data/hr_segments_prop_in_developed"))) %>% 
-  data.frame() %>%  
-  filter(prop.seg.in.dev50 == 0) %>% 
-  select(animal.id, seg.label, year, num.months) %>% 
-  filter(animal.id %in% analysis_pumas,
-         !animal.id %in% few_crossings_pumas,
-         !animal.id %in% hr_exclude_pumas,
-         !seg.label %in% p31_exclude_segments) %>% 
-  filter(animal.id != "P5")
-
-
-###
-# read df with the proportion of each segment in continuous areas of moderate or high development, from B1_clip_roads_by_impervious.R
-hr_segments_prop_in_developed <- readRDS(here("data/hr_segments_prop_in_developed")) %>% 
+all_analysis_segments_by_lion_year <- all_analysis_segments_by_lion_year %>% 
   data.frame() %>% 
-  select(-geometry, -seg.length)   %>% 
-  filter(animal.id %in% analysis_pumas,
-         !animal.id %in% few_crossings_pumas,
-         !animal.id %in% hr_exclude_pumas,
-         !seg.label %in% p31_exclude_segments) %>% 
-  filter(animal.id != "P5")
-
-summed_crossings_by_lion <- readRDS(here("data/analysis_inputs/annual_seg_crossings_naive_roads_only_0s")) %>%  
-  select(year, seg.label, which.steps, seg.wt = annual.seg.wt.crossing, raw.crossing = annual.seg.raw.crossing, num.lion.months, num.lions)
+  select(-geometry) %>% 
+  filter(!(animal.id == "P2" & year == 2016),
+         !(animal.id == "P19" & year == 2019))
+# 9/4/25 just realized P2 maybe not independent until 2016 and P19 not until 2020
 
 
-summed_crossings <- readRDS(here("data/analysis_inputs/annual_seg_crossings_naive_roads_only_0s_lions_combined")) %>%  
-  select(year, seg.label, which.steps, seg.wt = annual.seg.wt.crossing, raw.crossing = annual.seg.raw.crossing, num.lion.months, num.lions)
+all_analysis_segments_by_lion_year %>% 
+  count(crossing.step, seg.label) %>% 
+  filter(n > 1, !is.na(crossing.step)) %>%
+  nrow()
 
 
-# adding hr_segments_prop_in_developed shouldn't change the number of rows since it is derived from segments_in_homerange
-main_analysis_df_pre <- summed_crossings %>% 
-  left_join(hr_segments_prop_in_developed %>% distinct(seg.label, prop.seg.in.dev20, prop.seg.in.dev50))
-
-
-main_analysis_df_pre_by_lion <- summed_crossings_by_lion %>% 
-  left_join(hr_segments_prop_in_developed %>% distinct(seg.label, prop.seg.in.dev20, prop.seg.in.dev50))
-
-
-# habitat composition. veg and development ----
-# dev60 and tre.shr30 best for bin.crossing and num.lions.crossing 
-
-analysis_hab_composition <- readRDS(here("data/analysis_inputs/composition_scale_df_lions_combined")) %>% 
-  pivot_longer(cols = contains("mean."), names_to = "varb") %>% 
-  mutate(varb.buff = paste(varb, buff, sep = ".")) %>% 
-  filter(varb.buff %in% c("mean.tre.shr.30", "mean.dev.60")) %>% 
-  pivot_wider(id_cols = c(seg.label, year), names_from = varb.buff, values_from = value) %>% 
-  right_join(main_analysis_df_pre) %>% 
-  filter(prop.seg.in.dev50 == 0)
-
-# do any segments have missing composition values?
-monthly_analysis_hab_composition %>% summarise(across(starts_with("mean."), ~ any(is.na(.)))) # should all be FALSE
-annual_analysis_hab_composition %>% summarise(across(starts_with("mean."), ~ any(is.na(.)))) # should all be FALSE
-analysis_hab_composition %>% summarise(across(starts_with("mean."), ~ any(is.na(.)))) # should all be FALSE as long as prop.seg.in.dev50 filter is used above
-
-
-# habitat configuration. cohesion ----
-# 200m and 25% best for bin.crossings and num.lions.crossing
-
-analysis_hab_configuration <- readRDS(here("data/analysis_inputs/configuration_scale_df_lions_combined")) %>% 
-  filter(buff == 200, forest.threshold == 25) %>% 
-  right_join(main_analysis_df_pre) %>% 
-  filter(prop.seg.in.dev50 == 0) %>% 
-  rename(cohesion.200.25 = cohesion) %>% # renaming to include buff ad threshold as a reminder
-  select(year, seg.label, cohesion.200.25, raw.crossing, bin.crossing, num.lions.crossing, num.lion.months, seg.wt, patch.touches.road, np) 
-
-
-# do any segments have missing cohesion values?
-analysis_hab_configuration %>% filter(is.na(cohesion.200.25)) %>% nrow()
+all_analysis_segments_by_lion_year %>%
+  count(animal.id, year, used.available) %>% 
+  pivot_wider(id_cols = c(animal.id, year), names_from = used.available, values_from = n) %>% 
+  view()
 
 
 
-analysis_table <- full_join(analysis_hab_configuration, analysis_hab_composition) %>% 
-  left_join(readRDS(here("data/analysis_inputs/streams_per_segment"))) %>% 
-  left_join(readRDS(here("data/seg_midpoints_road_class")))
+# lion sex and age ----
+collar_info <- read_xlsx("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/other_research/mt_lion_data_work/data/COLLAR DATE INFO_31Dec2023.xlsx")
+
+names(collar_info) <- tolower(names(collar_info))
+names(collar_info) <- str_replace_all(names(collar_info), "# ", "")
+names(collar_info) <- str_replace_all(names(collar_info), " ", "\\.")
+
+collar_info <- collar_info %>%
+  mutate(animal.id = ifelse(animal.id == "P5*", "P5", animal.id)) %>% 
+  right_join(all_analysis_segments_by_lion_year %>% data.frame() %>% distinct(animal.id)) %>% 
+  select(animal.id, sex, collar, collar.id, age, collar.start, collar.end)
 
 
+# currently assuming age did not flip from SA to A for a collar period if collar was put on as SA.
+# waiting to hear back from Q about possibly flipping ages for some lions
+adult_collar_years <- collar_info %>% 
+  filter(age == "ADULT") %>% 
+  mutate(adult.start.year = year(collar.start)) %>% 
+  group_by(animal.id) %>% 
+  filter(adult.start.year == min(adult.start.year)) %>% 
+  distinct(animal.id, adult.start.year)
 
-combined_lions_analysis_table <- analysis_table %>% 
-  mutate(class = ifelse(class == "Access Road", "Local", class)) %>%  # only 1 segment and only in P31's HR
-  mutate(across(starts_with("mean."), ~ .x * 100)) %>% 
-  mutate(class = relevel(factor(class), ref = "Local")) # using Local as the reference level because it is most common, is possibly more likely to be crossed, adn becasue it will be handy to compare the likely busier roads to Local
+puma_sexes <- collar_info %>% 
+  distinct(animal.id, sex) %>% 
+  full_join(adult_collar_years)
+
+puma_sexes_ages <- all_analysis_segments_by_lion_year %>% 
+  data.frame() %>% 
+  distinct(animal.id, year) %>% 
+  full_join(puma_sexes) %>% 
+  mutate(adult.start.year = replace_na(adult.start.year, 2025), # just needs to be something after the end of the study
+         age = ifelse(year < adult.start.year, "sub-adult", "adult")) %>% 
+  arrange(animal.id, year)
+
+# landscape configuration ----
+
+all_analysis_segments_cohesion_treshr_patchrd <- readRDS(here("data/all_analysis_segments_cohesion_treshr_full")) %>% 
+  filter(buff == 300, forest.threshold == 25) %>% 
+  select(seg.label, year, cohesion, patchrd = patch.touches.road) %>% 
+  mutate(cohesion = scale(cohesion)[,1],
+         patchrd = scale(patchrd)[,1])
 
 
-saveRDS(combined_lions_analysis_table, here("data/analysis_inputs/combined_lions_analysis_table"))
+# landscape composition ----
+all_analysis_segments_mean_tre_shr <- readRDS(here("data/all_analysis_segments_mean_tre_shr_full")) %>% 
+  filter(buff == 60) %>% 
+  select(seg.label, year, tre.shr = mean.veg) %>% 
+  mutate(tre.shr = scale(tre.shr)[,1])
 
+
+all_analysis_segment_impervious <- readRDS(here("data/all_analysis_segment_impervious_full")) %>% 
+  filter(buff == 60) %>% 
+  select(seg.label, year, impervious = mean.percent.impervious) %>% 
+  mutate(impervious = scale(impervious)[,1])
+
+
+# road characteristics ----
+
+streams_per_segment <- readRDS(here("data/streams_per_segment")) %>% 
+  select(seg.label, year, riparian.binary)
+
+all_analysis_segments_class_clean <- readRDS(here("data/all_analysis_segments_class_clean")) %>% 
+  select(seg.label, year, class)
+
+all_analysis_segments_class_clean %>% 
+  distinct(seg.label, class) %>% count(class)
+
+all_analysis_segments_class_clean <- all_analysis_segments_class_clean %>% 
+  mutate(class = case_when(class == "Access Road" ~ "Local",
+                           class == "Freeway" ~ "Highway",
+                           TRUE ~ class)) %>% 
+  mutate(class = factor(class, levels = c("Local", "Collector", "Arterial", "Highway")))
+
+all_analysis_segments_class_clean %>% 
+  distinct(seg.label, class) %>% count(class)
+
+# combine all ----
+
+analysis_table <- all_analysis_segments_by_lion_year %>% 
+  data.frame() %>% 
+  select(seg.label, animal.id, year, used.available, seg.length) %>% 
+  mutate(seg.length = as.numeric(seg.length),
+         seg.length = round(seg.length, 0)) %>% 
+  full_join(puma_sexes_ages) %>% 
+  select(-adult.start.year)
+
+all(count(analysis_table, animal.id, year) %>% arrange(animal.id, year) == count(analysis_table, animal.id, year) %>% arrange(animal.id, year))
+
+analysis_table <- analysis_table %>% 
+  left_join(all_analysis_segments_cohesion_treshr_patchrd)
+
+all(count(analysis_table, animal.id, year) %>% arrange(animal.id, year) == count(analysis_table, animal.id, year) %>% arrange(animal.id, year))
+
+analysis_table <- analysis_table %>% 
+  left_join(all_analysis_segments_mean_tre_shr)
+
+all(count(analysis_table, animal.id, year) %>% arrange(animal.id, year) == count(analysis_table, animal.id, year) %>% arrange(animal.id, year))
+
+analysis_table <- analysis_table %>% 
+  left_join(all_analysis_segment_impervious)
+
+all(count(analysis_table, animal.id, year) %>% arrange(animal.id, year) == count(analysis_table, animal.id, year) %>% arrange(animal.id, year))
+
+analysis_table <- analysis_table %>% 
+  left_join(streams_per_segment)
+
+all(count(analysis_table, animal.id, year) %>% arrange(animal.id, year) == count(analysis_table, animal.id, year) %>% arrange(animal.id, year))
+
+analysis_table <- analysis_table %>% 
+  left_join(all_analysis_segments_class_clean)
+
+all(count(analysis_table, animal.id, year) %>% arrange(animal.id, year) == count(analysis_table, animal.id, year) %>% arrange(animal.id, year))
+
+analysis_table_complete <- analysis_table %>% 
+  drop_na()
+
+
+saveRDS(analysis_table_complete, here("data/analysis_table_complete"))
+
+# if already combined and saved start here ----
+
+analysis_table_complete <- readRDS(here("data/analysis_table_complete"))
 
 
 # optional data checking plots and summaries ----
 
 
+analysis_table_complete %>% 
+  count(used.available)
 
-main_analysis_table %>%
-  pivot_longer(cols = c(mean.tre.shr.210, mean.dev.300, cohesion.200.50)) %>% 
+
+analysis_table_complete %>%
+  pivot_longer(cols = c(tre.shr, impervious, cohesion)) %>% 
   ggplot() +
   geom_density(aes(x = value, color = name)) +
   facet_wrap(~name)
@@ -195,12 +228,14 @@ main_analysis_table %>%
   
 # code to generate exploratory models ----
   # Define variable sets
-  core_vars <- c("cohesion.200.25"
-                 , "patch.touches.road"
-                 , "mean.tre.shr.30"
-                 , "mean.dev.60" 
-                 , "num.creek.bin"
+  core_vars <- c("cohesion"
+                 , "patchrd"
+                 , "tre.shr"
+                 , "impervious" 
+                 , "riparian.binary"
                  , "class"
+                 , "sex"
+                 , "age"
                  )
   
   
