@@ -7,7 +7,7 @@ library(sf)
 
 
 
-hab_masker <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs_99_combined_sonoma_napa")) %>% 
+hab_masker <- readRDS(here("model_objects/a_loCoH home ranges/aLoCoH_hrs_100_combined_sonoma_napa")) %>% 
   st_buffer(300) %>% 
   st_transform(crs = 26910)
 
@@ -42,19 +42,21 @@ create_tre_shr_raster <- function(zyear) {
   shr_masked <- process_layer(shr_raw)
   
   # Save individual layers
-  tre_path <- file.path(output_dir, paste0("tre_", zyear, ".tif"))
-  shr_path <- file.path(output_dir, paste0("shr_", zyear, ".tif"))
+ # tre_path <- file.path(output_dir, paste0("tre_", zyear, ".tif"))
+#  shr_path <- file.path(output_dir, paste0("shr_", zyear, ".tif"))
   sum_path <- file.path(output_dir, paste0("tre_shr_", zyear, ".tif"))
   
-  terra::writeRaster(tre_masked, tre_path, overwrite = TRUE)
-  terra::writeRaster(shr_masked, shr_path, overwrite = TRUE)
+ # terra::writeRaster(tre_masked, tre_path, overwrite = TRUE)
+#  terra::writeRaster(shr_masked, shr_path, overwrite = TRUE)
   
   # Sum and save combined raster
   sum_layer <- terra::app(c(tre_masked, shr_masked), sum)
   terra::writeRaster(sum_layer, sum_path, overwrite = TRUE)
   
-  message("Saved TRE, SHR, and TRE+SHR rasters for ", zyear)
-  return(invisible(list(tre = tre_path, shr = shr_path, sum = sum_path)))
+  #message("Saved TRE, SHR, and TRE+SHR rasters for ", zyear)
+  message("Saved TRE+SHR raster for ", zyear)
+  
+  #return(invisible(list(tre = tre_path, shr = shr_path, sum = sum_path)))
 }
 
 
@@ -64,8 +66,8 @@ system.time(
 map(seq(2016, 2023), create_tre_shr_raster)
 ) # 372
 
-
-# development layer ----
+#rast(here("data/processed_habitat_rasters/tre_shr_2020.TIF")) %>% plot()
+# NO RUN development layer ----
 
 
 create_dev_raster <- function(zyear) {
