@@ -323,3 +323,4 @@ all_bbmm_roads_df_naive <- all_bbmm_roads_df_naive %>%
 
 saveRDS(all_bbmm_roads_df_naive, here("data/all_bbmm_roads_df_naive"))
 
+all_bbmm_roads_df_naive <- readRDS(here("data/all_bbmm_roads_df_naive"))
