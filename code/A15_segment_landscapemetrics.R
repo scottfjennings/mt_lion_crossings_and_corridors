@@ -31,7 +31,9 @@ all_analysis_segments %>%
   count(seg.label, year) %>% 
   view()
   
-
+all_analysis_segments %>% 
+  data.frame() %>% 
+  count(year) 
 
 # calculate patch cohesion ----
 #' get_hr_road_patch_cohesion_treshr
@@ -79,7 +81,6 @@ get_hr_road_patch_cohesion_treshr <- function(zyear, layer_type = "tre_shr") {
     
     buffer_metrics <- purrr::map_dfr(1:nrow(road_buffer_sf), function(j) {
       one_buf <- road_buffer_sf[j, ]
-      #one_buf <- filter(road_buffer_sf, seg.label == "Adobe Canyon Rd_Kenwood_1_2")
       one_vect <- terra::vect(one_buf)
       
       bin_crop <- terra::crop(forest_binary, one_vect)
@@ -141,16 +142,31 @@ get_hr_road_patch_cohesion_treshr <- function(zyear, layer_type = "tre_shr") {
   message("Values calculated for ", zyear)
   
   saveRDS(results, here(paste("data/all_analysis_segments_cohesion_treshr", zyear, sep = "_")))
-  #return(results)
+  return(results)
 }
 
 
 
 
 system.time(
-  all_hr_road_patch_cohesion_treshr <- get_hr_road_patch_cohesion_treshr(2016, layer_type = "tre_shr")
-) # 349
+  all_hr_road_patch_cohesion_treshr_2020 <- get_hr_road_patch_cohesion_treshr(2020, layer_type = "tre_shr")
+) # 1831
 
+
+
+system.time(
+  all_hr_road_patch_cohesion_treshr_2021 <- get_hr_road_patch_cohesion_treshr(2021, layer_type = "tre_shr")
+) # 4706
+
+
+
+system.time(
+  all_hr_road_patch_cohesion_treshr_2022 <- get_hr_road_patch_cohesion_treshr(2022, layer_type = "tre_shr")
+) # 4706
+
+system.time(
+  all_hr_road_patch_cohesion_treshr_2023 <- get_hr_road_patch_cohesion_treshr(2023, layer_type = "tre_shr")
+) # 9032.01 
 
 
 system.time(
@@ -166,6 +182,13 @@ all_hr_road_patch_cohesion_treshr <- bind_rows(readRDS(here("data/all_analysis_s
                                                readRDS(here("data/all_analysis_segments_cohesion_treshr_2021")),
                                                readRDS(here("data/all_analysis_segments_cohesion_treshr_2022")),
                                                readRDS(here("data/all_analysis_segments_cohesion_treshr_2023")))
+
+
+# checking NA
+zz <- all_hr_road_patch_cohesion_treshr %>% 
+  filter(buff == 200, forest.threshold == 50) %>% 
+  right_join(all_analysis_segments)
+
 
 
 # should be up to 9 records per seg.label per year
@@ -223,6 +246,22 @@ all_analysis_segments_cohesion_treshr_full %>%
 
 
 saveRDS(all_analysis_segments_cohesion_treshr_full, here("data/all_analysis_segments_cohesion_treshr_full"))
+
+
+# Sep 16, 2025 quick fix
+# today I realized I extracted habitat covariates for all BBMM roads, not just the naive roads, but I only want to analyze the naive roads.
+# I remade here("data/all_analysis_segments") to just be the naive roads and just crossings that crossed the naive roads once
+# but I don't want to re-extract habitat values because that takes many hours of computing
+# so just doing a filtering join witht he new all_analysis_segments as a quick fix
+
+all_analysis_segments_cohesion_treshr_full <- readRDS(here("data/all_analysis_segments_cohesion_treshr_full"))
+
+
+all_analysis_segments_cohesion_treshr_full <- all_analysis_segments_cohesion_treshr_full %>% 
+  right_join(readRDS(here("data/all_analysis_segments")))
+
+saveRDS(all_analysis_segments_cohesion_treshr_full, here("data/all_analysis_segments_cohesion_treshr_full"))
+
 
 
 ########################################
