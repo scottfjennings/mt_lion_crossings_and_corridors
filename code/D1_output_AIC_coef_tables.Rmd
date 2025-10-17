@@ -1,0 +1,289 @@
+---
+title: "MS model selection and coefficient tables"
+output: word_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      error = FALSE)
+```
+
+
+```{r}
+
+library(tidyverse)
+library(here)
+library(officer)
+library(flextable)
+library(AICcmodavg)
+library(lme4)
+```
+
+```{r}
+
+
+fix_modnames <- function(df) {
+  df <- df %>%
+  mutate(Modnames = str_replace_all(Modnames, "_", " + "),
+         Modnames = str_replace_all(Modnames, "\\.", " * "),
+         Modnames = str_replace(Modnames, "cohesion", "Cohesion"),
+         Modnames = str_replace(Modnames, "patchrd", "CrossWoody"),
+         Modnames = str_replace(Modnames, "treshr", "% Woody"),
+         Modnames = str_replace(Modnames, "impervious", "% Impervious"),
+         Modnames = str_replace(Modnames, "bridgebinary", "Bridge/culvert"),
+         Modnames = str_replace(Modnames, "class", "Class"),
+         Modnames = str_replace(Modnames, "sex", "Sex"),
+         Modnames = str_replace(Modnames, "age", "Age"),
+         Modnames = str_replace_all(Modnames, "2", "²"))
+}
+
+aic_flextabler <- function(df) {
+  df  %>% 
+  mutate(across(c(AICc, Delta_AICc, LL, AICcWt), ~round(., 3))) %>% 
+  select(Modnames, K, AICc, Delta_AICc, LL) %>% 
+  flextable() %>% 
+  set_header_labels(Modnames = "Fixed structure",
+                    Delta_AICc = "\u0394 AICc",
+                    LL = "log(Lik)") %>% 
+  autofit() %>% 
+  fit_to_width(max_width = 7)
+
+}
+
+```
+  
+  
+  All lions combined  
+  
+```{r}
+
+readRDS(here("model_objects/base_crossing_models"))$aic %>% 
+  fix_modnames() %>% 
+  aic_flextabler()
+
+```
+  
+  Round 2  
+```{r}
+
+readRDS(here("model_objects/round2_crossing_models"))$aic %>% 
+  fix_modnames() %>% 
+  aic_flextabler()
+
+```
+  
+  Females  
+  
+```{r eval = FALSE}
+
+readRDS(here("model_objects/base_crossing_models_female"))$aic %>% 
+  fix_modnames() %>% 
+  aic_flextabler()
+
+```
+   
+   
+   Males  
+  
+```{r eval = FALSE}
+
+readRDS(here("model_objects/base_crossing_models_male"))$aic %>% 
+  fix_modnames() %>% 
+  aic_flextabler()
+
+```
+
+
+   
+   
+   Adults  
+  
+```{r eval = FALSE}
+
+readRDS(here("model_objects/base_crossing_models_adult"))$aic %>% 
+  fix_modnames() %>% 
+  aic_flextabler()
+
+```
+
+
+   
+   
+   Sub-adults  
+  
+```{r eval = FALSE}
+
+readRDS(here("model_objects/base_crossing_models_subadult"))$aic %>% 
+  fix_modnames() %>% 
+  aic_flextabler()
+
+```
+
+
+
+
+\pagebreak  
+    
+Estimated coefficients and bootstrapped 95% confidence intervals for the best model in each data group.   
+```{r eval = FALSE}
+# run this one if using models fitted separately to age/sex groups
+
+output_models = list("best_model_all_lions_combined" = readRDS(here("model_objects/base_crossing_models"))$cohesion2_treshr2_impervious2_patchrd_bridgebinary_class,
+                     "best_model_females" = readRDS(here("model_objects/base_crossing_models_female"))$cohesion2_treshr_impervious2_patchrd_bridgebinary_class,
+                     "best_model_males" = readRDS(here("model_objects/base_crossing_models_male"))$cohesion2_treshr2_impervious2_patchrd_bridgebinary_class,
+                     "best_model_adults" = readRDS(here("model_objects/base_crossing_models_adult"))$cohesion2_treshr2_impervious2_patchrd_bridgebinary_class,
+                     "best_model_subadults" = readRDS(here("model_objects/base_crossing_models_subadult"))$cohesion_treshr_impervious2_patchrd_bridgebinary_class)
+
+
+fixed_effects_coefs <- map_df(output_models, ~ {
+  coefs <- fixef(.x)
+  ses <- sqrt(diag(vcov(.x)))
+  
+  tibble(
+    term = names(coefs),
+    estimate = coefs,
+    std_error = ses
+  )
+}, .id = "model")
+
+
+fixed_effects_boot_ci <- bind_rows(readRDS(here("model_objects/boot_coef_ci_1000sim_best_mod_all_lions")) %>% 
+                                mutate(model = "best_model_all_lions_combined"),
+                              readRDS(here("model_objects/boot_coef_ci_1000sim_best_mod_female")) %>% 
+                                mutate(model = "best_model_females"),
+                              readRDS(here("model_objects/boot_coef_ci_1000sim_best_mod_male")) %>% 
+                                mutate(model = "best_model_males"),
+                              readRDS(here("model_objects/boot_coef_ci_1000sim_best_mod_adult")) %>% 
+                                mutate(model = "best_model_adults"),
+                              readRDS(here("model_objects/boot_coef_ci_1000sim_best_mod_subadult")) %>% 
+                                mutate(model = "best_model_subadults"))
+
+
+
+fixed_effects_df_clean <- full_join(fixed_effects_boot_ci, fixed_effects_coefs) %>% 
+  filter(term != "(Intercept)")
+
+
+fixed_effects_df_clean <- fixed_effects_df_clean %>%
+  mutate(term = str_replace_all(term, "poly\\(", ""),
+         term = str_replace_all(term, ", 2\\)1", ""),
+         term = str_replace_all(term, ", 2\\)", ""),
+         term = str_replace_all(term, "TRUE", ""),
+         term = str_replace(term, "cohesion", "Cohesion"),
+         term = str_replace(term, "cohesion", "Cohesion"),
+         term = str_replace(term, "patchrd", "CrossWoody"),
+         term = str_replace(term, "tre.shr", "% Woody"),
+         term = str_replace(term, "impervious", "% Impervious"),
+         term = str_replace(term, "bridge.binary", "Bridge/culvert"),
+         term = str_replace(term, "class", "Class-"),
+         term = str_replace(term, "sexM", "Sex-Male"),
+         term = str_replace(term, "agesub-adult", "Age-Sub adult"),
+         term = str_replace_all(term, "2", "²")
+         )
+
+fixed_effects_df_clean <- fixed_effects_df_clean %>% 
+  mutate(across(c(estimate, std_error, lower, upper), ~round(.,2))) %>% 
+  mutate(out.val = paste(estimate, " (", lower, ", ", upper, ")", sep = ""))
+
+
+
+fixed_effects_df_wide <- fixed_effects_df_clean %>%
+  mutate(model = str_replace_all(model, "best_model", ""),
+         model = str_replace_all(model, "_", " ")) %>% 
+  pivot_wider(id_cols = c(term), names_from = model, values_from = out.val)
+
+
+
+fixed_effects_df_wide %>% 
+  flextable() %>% 
+  autofit() %>% 
+  fit_to_width(max_width = 7)
+  
+
+
+```
+
+```{r}
+# run this one if using models fitted with age and sex interactions
+
+output_models = list("round_2_best_model" = readRDS(here("model_objects/round2_crossing_models"))$cohesion2_treshr2_impervious2_patchrd_bridgebinary_sex.class,
+                     "round_2_2nd_best_model" = readRDS(here("model_objects/round2_crossing_models"))$cohesion2_treshr2_sex.impervious2_patchrd_bridgebinary_class)
+
+
+fixed_effects_coefs <- map_df(output_models, ~ {
+  coefs <- fixef(.x)
+  ses <- sqrt(diag(vcov(.x)))
+  
+  tibble(
+    term = names(coefs),
+    estimate = coefs,
+    std_error = ses
+  )
+}, .id = "model")
+
+
+
+fixed_effects_boot_ci <- bind_rows(readRDS(here("model_objects/boot_coef_ci_1000sim_rnd2_best_mod")) %>% 
+                                mutate(model = "round_2_best_model"),
+                              readRDS(here("model_objects/boot_coef_ci_1000sim_rnd2_2nd_best_mod")) %>% 
+                                mutate(model = "round_2_2nd_best_model"))
+
+
+
+fixed_effects_df_clean <- full_join(fixed_effects_boot_ci, fixed_effects_coefs) %>% 
+  filter(term != "(Intercept)")
+
+
+fixed_effects_df_clean <- fixed_effects_df_clean %>% 
+  mutate(term = str_replace_all(term, ", raw = TRUE", ""))%>%
+  mutate(term = str_replace_all(term, "poly\\(", ""),
+         term = str_replace_all(term, ", 2\\)1", ""),
+         term = str_replace_all(term, ", 2\\)", ""),
+         term = str_replace_all(term, "TRUE", ""),
+         term = str_replace(term, "cohesion", "Cohesion"),
+         term = str_replace(term, "cohesion", "Cohesion"),
+         term = str_replace(term, "patchrd", "CrossWoody"),
+         term = str_replace(term, "tre.shr", "% Woody"),
+         term = str_replace(term, "impervious", "% Impervious"),
+         term = str_replace(term, "bridge.binary", "Bridge/culvert"),
+         term = str_replace(term, "class", "Class-"),
+         term = str_replace(term, "sexM", "Sex-Male"),
+         term = str_replace(term, "agesub-adult", "Age-Sub adult"),
+         term = str_replace_all(term, "2", "²")
+         )
+
+fixed_effects_df_clean <- fixed_effects_df_clean %>% 
+  mutate(across(c(estimate, std_error, lower, upper), ~round(.,2))) %>% 
+  mutate(out.val = paste(estimate, " (", lower, ", ", upper, ")", sep = ""))
+
+
+
+fixed_effects_df_wide <- fixed_effects_df_clean %>%
+  mutate(model = str_replace_all(model, "best_model", ""),
+         model = str_replace_all(model, "_", " ")) %>% 
+  pivot_wider(id_cols = c(term), names_from = model, values_from = out.val)
+
+
+
+fixed_effects_df_wide %>% 
+  flextable() %>% 
+  autofit() %>% 
+  fit_to_width(max_width = 7)
+  
+
+
+```
+
+
+Cohesion, % Woody, and % Impervious were Z-transformed  
+
+Cohesion calculated with the landscapemetrics package following Schumaker, N. H. 1996. Using landscape indices to predict habitat connectivity. Ecology, 77(4), 1210-1225.  
+
+CrossWoody coded as 1 if the road intersects a patch of woody vegetation (rather than woody veg being somewhere in the buffer distance around that road segment), 0 otherwise.  
+
+Bridge/culvert coded as 1 if there is at least 1 bridge or culvert in the road segment, 0 otherwise.  
+
+Road class is a 4 level factor with Local as the reference level  
